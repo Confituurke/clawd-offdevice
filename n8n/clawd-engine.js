@@ -86,7 +86,7 @@ function freshState(gen) {
     pp: 0, pt: 0, cf: 0,
     ui: 0, mi: 0, dwell: 0, rp: 0,
     ev_k: 0, ev_t0: 0, stat_open: 0,
-    lastNotify: 0, decAcc: 0,
+    lastNotify: 0, decAcc: 0, aslast: null,
     last_ts: Math.floor(Date.now() / 1000)
   };
 }
@@ -147,6 +147,9 @@ function applyCatchup(s, dtSec) {
 
 // ---- one ~10s decay step, same formulas as loop()'s dec10 branch -------
 function decayStep(s) {
+  if (s.st !== 1) return; // already dead - don't keep mutating a corpse
+  // if multiple steps batch into one call (large dt) and this step kills the
+  // pet, later steps in the same batch must not keep decaying it further
   const sl = s.sl === 1;
   const xtra = (s.pp >= 2 || s.sk === 1) ? 5 : 0;
   s.h  = clamp(s.h  - (sl ? 3 : 7), 0, 10000);
@@ -220,9 +223,19 @@ function advanceTime(s) {
 
   s.age += dt;
 
-  // auto-sleep 22-08, unless manually overridden this window
+  // Auto-sleep 22-08. A manual override (slo != 0) lasts only until the next
+  // switch point - when `auto` flips relative to the last time we checked,
+  // the override is cleared and the schedule takes back control. Without
+  // this, one SLEEP/WAKE button press would stick forever and the schedule
+  // would never engage again.
   const hr = new Date().getHours();
   const auto = hr >= 22 || hr < 8;
+  if (s.aslast === null || s.aslast === undefined) {
+    s.aslast = auto;
+  } else if (auto !== s.aslast) {
+    s.aslast = auto;
+    s.slo = 0;
+  }
   if (s.slo === 0) s.sl = auto ? 1 : 0;
 
   if (s.pt > 0 && s.sl !== 1) {

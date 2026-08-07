@@ -407,12 +407,16 @@ function renderPayload(s) {
     else if (s.va === 0) { pair = SPR.a0; w = 8; h = 7; skin = CM.O; }
     else if (s.va === 2) { pair = SPR.a2; w = 8; h = 7; skin = CM.q; }
     else { pair = SPR.a1; w = 8; h = 7; skin = CM.o; }
-    const frame = pickFrame(pair);
+    const asleep = s.sl === 1;
+    // no mouth/limb flip while asleep - one still frame, same as the
+    // original's f0-only sleeping pose (no f1 alternation)
+    const frame = asleep ? pair.a : pickFrame(pair);
     const ox = Math.floor((17 - w) / 2), oy = 7 - h;
 
     for (let i = 0; i < s.pp; i++) blit(draw, SPR.poop, 12 + i, 5 - i);
-    blitBlink(draw, frame, ox, oy, skin, blinking && s.sl !== 1);
-    if (s.sl === 1) draw.push(['text', ox + w + 1, 3, 'z', '#5C7FBF']);
+    // eyes stay shut for the whole nap, not just a quick blink
+    blitBlink(draw, frame, ox, oy, skin, asleep || blinking);
+    if (asleep) draw.push(['text', ox + w + 1, 3, 'z', '#5C7FBF']);
     if (s.sk === 1) { draw.push(['pixel', 0, 0, '#35C24A']); draw.push(['pixel', 0, 1, '#35C24A']); }
 
     const ed = Date.now() - s.ev_t0;

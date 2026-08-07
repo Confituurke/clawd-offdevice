@@ -30,16 +30,16 @@ works pretty well. Who knew.
 ## How it actually works
 
 ```
-                    ┌─────────────────────┐
-   physical button  │                      │  PUT /apps/pushed/clawd
-   on the Ulanzi ───┤   n8n workflow       ├───────────────────────►  AWTRIX
+                     ┌──────────────────────┐
+    physical button  │                      │  PUT /apps/pushed/clawd
+    on the Ulanzi ───┤   n8n workflow       ├───────────────────────►  AWTRIX
       (via MQTT)     │   (the actual brain) │        draw commands
                      │                      │
    HA dashboard  ───►│  - decay/aging tick  │
    button (webhook)  │  - menu / actions    │
                      │  - sprite rendering  │
    every 2s     ─────┤  - sound + notify    │
-   (schedule)         └─────────────────────┘
+   (schedule)        └──────────────────────┘
 ```
 
 - AWTRIX becomes a **dumb screen**: it just renders `pixel`/`rect`/`text` draw

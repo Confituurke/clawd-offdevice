@@ -1,0 +1,34 @@
+# Included via: rest_command: !include configs/rest_command.yaml
+# No top-level "rest_command:" key in here - the include line above supplies it.
+# Replace <N8N_HOST> with your n8n host:port, e.g. 192.168.178.50:5678
+
+clawd_feed:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"feed"}'
+clawd_play:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"play"}'
+clawd_clean:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"clean"}'
+clawd_med:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"med"}'
+clawd_sleep:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"sleep"}'
+clawd_stats:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"stats"}'

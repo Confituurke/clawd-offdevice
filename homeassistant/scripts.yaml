@@ -1,0 +1,34 @@
+# In deine bestehende scripts.yaml einfügen (nicht als eigene Datei includen -
+# du hast schon "script: !include scripts.yaml", also gehört das direkt rein).
+# Gleiche Einrückung wie deine übrigen Scripts dort verwenden.
+
+clawd_feed:
+  alias: "Clawd füttern"
+  icon: mdi:food-drumstick
+  sequence:
+    - action: rest_command.clawd_feed
+clawd_play:
+  alias: "Clawd spielen"
+  icon: mdi:tennis-ball
+  sequence:
+    - action: rest_command.clawd_play
+clawd_clean:
+  alias: "Clawd putzen"
+  icon: mdi:broom
+  sequence:
+    - action: rest_command.clawd_clean
+clawd_med:
+  alias: "Clawd Medizin geben"
+  icon: mdi:pill
+  sequence:
+    - action: rest_command.clawd_med
+clawd_sleep:
+  alias: "Clawd Schlaf umschalten"
+  icon: mdi:sleep
+  sequence:
+    - action: rest_command.clawd_sleep
+clawd_stats:
+  alias: "Clawd Stats anzeigen"
+  icon: mdi:chart-box
+  sequence:
+    - action: rest_command.clawd_stats

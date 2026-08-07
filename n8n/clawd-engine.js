@@ -86,7 +86,7 @@ function freshState(gen) {
     pp: 0, pt: 0, cf: 0,
     ui: 0, mi: 0, dwell: 0, rp: 0,
     ev_k: 0, ev_t0: 0, stat_open: 0,
-    lastNotify: 0,
+    lastNotify: 0, decAcc: 0,
     last_ts: Math.floor(Date.now() / 1000)
   };
 }
@@ -230,7 +230,14 @@ function advanceTime(s) {
     if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = clamp(s.cl - 1500, 0, 10000); }
   }
 
-  const steps = Math.min(360, Math.floor(dt / 10)); // cap: 1h worth of steps per call
+  // Accumulate real seconds across calls (each tick only contributes ~2s) and
+  // fire a decay step every time it crosses a 10s boundary - carrying the
+  // remainder forward instead of resetting it. Fixes: with a per-call
+  // Math.floor(dt/10), a steady 2s-interval tick never reached 10s in a
+  // single call and decay silently never fired.
+  s.decAcc = (s.decAcc || 0) + dt;
+  const steps = Math.min(360, Math.floor(s.decAcc / 10)); // cap: 1h worth per call
+  s.decAcc -= steps * 10;
   for (let i = 0; i < steps; i++) decayStep(s);
 
   checkEvolution(s);

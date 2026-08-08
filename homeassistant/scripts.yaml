@@ -32,3 +32,13 @@ clawd_stats:
   icon: mdi:chart-box
   sequence:
     - action: rest_command.clawd_stats
+clawd_wake:
+  alias: "Clawd aufwecken"
+  icon: mdi:weather-sunny
+  sequence:
+    - action: rest_command.clawd_wake
+clawd_reset:
+  alias: "Clawd neu starten (nur wenn tot)"
+  icon: mdi:egg-outline
+  sequence:
+    - action: rest_command.clawd_reset

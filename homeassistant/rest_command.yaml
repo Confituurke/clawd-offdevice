@@ -32,3 +32,13 @@ clawd_stats:
   method: POST
   content_type: "application/json"
   payload: '{"action":"stats"}'
+clawd_wake:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"wake"}'
+clawd_reset:
+  url: "http://<N8N_HOST>/webhook/clawd-action"
+  method: POST
+  content_type: "application/json"
+  payload: '{"action":"reset"}'

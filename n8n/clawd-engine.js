@@ -307,6 +307,16 @@ function action(s, id) {
     if (s.sl === 1) { s.slo = 1; s.sl = 0; } else { s.slo = 2; s.sl = 1; }
   } else if (id === 6) {
     s.ui = 3; s.stat_open = Date.now();
+  } else if (id === 7) { // RESET - only takes effect while dead, skips the
+    // on-device two-press confirm dance since a dashboard button already
+    // requires a deliberate tap
+    if (s.st === 2) {
+      const gen = s.gen;
+      Object.assign(s, freshState(gen + 1));
+      s.ev_k = 7;
+    }
+  } else if (id === 8) { // WAKE - force awake; no-op if already awake
+    if (s.sl === 1) { s.slo = 1; s.sl = 0; }
   }
   s.ev_t0 = Date.now();
 }

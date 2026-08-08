@@ -111,7 +111,13 @@ without wading through JSON escaping.
 
 The workflow exposes a webhook at `POST /webhook/clawd-action` with a body
 like `{"action":"feed"}` (valid actions: `feed`, `play`, `clean`, `med`,
-`sleep`, `stats`).
+`sleep`, `stats`, `wake`, `reset`).
+
+`wake` force-wakes the pet regardless of the auto-sleep schedule (`sleep`
+stays a toggle, mirroring the on-device menu item). `reset` only does
+anything while the pet is dead — it skips the on-device two-press confirm
+dance and immediately hatches a new egg, since a deliberate dashboard tap
+doesn't need the same misclick protection a single physical button does.
 
 Add the REST command definitions — **restart HA fully after this, `rest_command`
 does not hot-reload**:

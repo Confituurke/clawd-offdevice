@@ -1,9 +1,9 @@
-# Optional dashboard card with all six buttons.
+# Optional dashboard card with all eight buttons.
 # Paste into a dashboard as a manual card (Lovelace UI editor -> Add Card ->
 # Manual), or search for the individual script.clawd_* entities instead.
 
 type: grid
-columns: 3
+columns: 4
 square: false
 cards:
   - type: button
@@ -22,5 +22,11 @@ cards:
     entity: script.clawd_sleep
     name: Sleep
   - type: button
+    entity: script.clawd_wake
+    name: Wake
+  - type: button
     entity: script.clawd_stats
     name: Stats
+  - type: button
+    entity: script.clawd_reset
+    name: New Egg

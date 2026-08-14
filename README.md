@@ -99,7 +99,9 @@ and it's the whole thing we're trying to avoid.
    and if you added it, **Switch To Clawd**): replace `<AWTRIX_IP>` with your
    device's real IP.
 4. Optionally rename the pet at the top of the **Clawd Engine** node
-   (`const PET_NAME = 'Clawd';`).
+   (`const PET_NAME = 'Clawd';`), or tune how fast the pet's stats decay
+   (`const DECAY_INTERVAL_SEC = 60;` — higher = slower decay, e.g. `120` for
+   half speed again).
 5. **Activate/publish the workflow.** This step is easy to forget and the
    symptom is "nothing happens" — ask me how I know.
 

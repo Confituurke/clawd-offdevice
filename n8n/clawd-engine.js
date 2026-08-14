@@ -12,6 +12,13 @@
 
 // ---- CONFIG — edit these -----------------------------------------------
 const PET_NAME = 'Clawd';
+// One decayStep() = one "tick" of hunger/happiness/energy/cleanliness loss,
+// same formulas/amounts as the original Berry script's dec10 branch (which
+// fired every 10 real seconds on-device). Off-device we don't need to match
+// that 1:1 - bump this to slow the whole simulation down. 60 = 6x slower
+// than the original, so an unattended pet can survive a normal night's sleep
+// without starving. Raise further (e.g. 120-180) if it's still too fast.
+const DECAY_INTERVAL_SEC = 60;
 
 // ---- palette (same hex values as the Berry script's self.cm) -----------
 const CM = {
@@ -145,7 +152,8 @@ function applyCatchup(s, dtSec) {
   }
 }
 
-// ---- one ~10s decay step, same formulas as loop()'s dec10 branch -------
+// ---- one decay step (fires every DECAY_INTERVAL_SEC), same formulas as ----
+// ---- the original Berry script's dec10 branch --------------------------
 function decayStep(s) {
   if (s.st !== 1) return; // already dead - don't keep mutating a corpse
   // if multiple steps batch into one call (large dt) and this step kills the
@@ -244,13 +252,14 @@ function advanceTime(s) {
   }
 
   // Accumulate real seconds across calls (each tick only contributes ~2s) and
-  // fire a decay step every time it crosses a 10s boundary - carrying the
-  // remainder forward instead of resetting it. Fixes: with a per-call
-  // Math.floor(dt/10), a steady 2s-interval tick never reached 10s in a
+  // fire a decay step every time it crosses a DECAY_INTERVAL_SEC boundary -
+  // carrying the remainder forward instead of resetting it. Fixes: with a
+  // per-call Math.floor(dt/N), a steady 2s-interval tick never reached N in a
   // single call and decay silently never fired.
   s.decAcc = (s.decAcc || 0) + dt;
-  const steps = Math.min(360, Math.floor(s.decAcc / 10)); // cap: 1h worth per call
-  s.decAcc -= steps * 10;
+  const capSteps = Math.ceil(3600 / DECAY_INTERVAL_SEC); // cap: 1h worth per call
+  const steps = Math.min(capSteps, Math.floor(s.decAcc / DECAY_INTERVAL_SEC));
+  s.decAcc -= steps * DECAY_INTERVAL_SEC;
   for (let i = 0; i < steps; i++) decayStep(s);
 
   checkEvolution(s);

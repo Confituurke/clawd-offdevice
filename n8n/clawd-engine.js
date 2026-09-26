@@ -38,8 +38,8 @@ const DEFAULTS = {
   SOUND: false,               // play RTTTL effects (off by default, like the original)
   NOTIFY: false,              // "<name> needs you!" notifications
   SWITCH_ON_EVENTS: true,     // bring Clawd on screen when it hatches, evolves, falls ill or dies
-  STATE_TOPIC: 'clawd/state', // view mode: n8n -> device
-  CMD_TOPIC: 'clawd/cmd',     // view mode: device -> n8n
+  STATE_TOPIC: 'clawd/state', // n8n -> device (view) and Home Assistant (both modes)
+  CMD_TOPIC: 'clawd/cmd',     // device (view) and Home Assistant (both modes) -> n8n
   OFFSCREEN_REFRESH_SEC: 30,  // push mode: refresh the frame this often while Clawd is not shown
   STALE_AFTER_SEC: 90,        // push mode: AWTRIX draws a red frame if no update arrives in time
   BURST: true                 // push mode: extra frames while an effect plays
@@ -658,7 +658,6 @@ function run(input, store, rawCfg, nowMs) {
     out.ignore = true; return out;
   }
   if (cfg.MODE === 'view' && (ev === 'button' || ev === 'active')) { out.ignore = true; return out; }
-  if (cfg.MODE === 'push' && ev === 'cmd') { out.ignore = true; return out; }
 
   const prev = { st: s.st, ev: s.ev, sk: s.sk, fx: s.fx };
   const before = significant(s, dev);
@@ -686,6 +685,9 @@ function run(input, store, rawCfg, nowMs) {
     const c = parseCmd(input.payload);
     if (!c) { out.ignore = true; return out; }
     action(s, c.id, cfg, nowMs, c);
+    // In push mode nothing on the clock sends commands, so they come from
+    // Home Assistant (or similar) and, like the webhook, bring Clawd on screen.
+    if (cfg.MODE === 'push') out.switchTo = true;
     userAct = true;
   }
 
@@ -717,9 +719,12 @@ function run(input, store, rawCfg, nowMs) {
         for (let t = nowMs + 100; t <= Math.min(until, nowMs + 3000); t += 250) out.frames.push(render(s, cfg, t));
       }
     }
-  } else {
-    // view mode: publish when anything the device shows changed, and at
-    // least once a minute so a restarted device gets fresh data quickly.
+  }
+
+  // The state line: the view app draws from it, and Home Assistant reads it in
+  // both modes. Published when anything visible changed, and at least once a
+  // minute so a restarted device or HA gets fresh data quickly.
+  {
     const line = stateLine(s, cfg, nowMs);
     const f = line.split(',');
     const psig = f.slice(0, 15).concat(f.slice(16, 19), f.slice(20)).join(',');  // all but age and clock

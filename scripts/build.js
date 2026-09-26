@@ -37,13 +37,14 @@ const TICK_EVENT = `return [{ json: { event: 'tick' } }];`;
 
 const MQTT_EVENT = `// AWTRIX NG publishes "1" on press and "0" on release (retained), and the
 // name of the app on screen as a plain string. Only presses and app changes
-// matter; the engine checks the prefix against the Settings node.
+// matter; the engine checks the prefix against the Settings node. Anything
+// else this trigger receives is the command topic (Home Assistant).
 const out = [];
 for (const item of $input.all()) {
   const topic = String(item.json.topic || '');
   const msg = String(item.json.message ?? '').trim();
   const at = topic.lastIndexOf('/state/');
-  if (at < 0) continue;
+  if (at < 0) { if (msg) out.push({ json: { event: 'cmd', payload: msg } }); continue; }
   const prefix = topic.slice(0, at);
   const rest = topic.slice(at + 7).split('/');
   if (rest[0] === 'buttons' && rest.length === 2) {
@@ -160,7 +161,7 @@ function settings(mode, pos) {
     ['SWITCH_ON_EVENTS', d.SWITCH_ON_EVENTS, 'boolean']
   ];
   if (mode === 'push') rows.push(['BURST', d.BURST, 'boolean'], ['OFFSCREEN_REFRESH_SEC', d.OFFSCREEN_REFRESH_SEC, 'number'], ['STALE_AFTER_SEC', d.STALE_AFTER_SEC, 'number']);
-  else rows.push(['STATE_TOPIC', d.STATE_TOPIC, 'string'], ['CMD_TOPIC', d.CMD_TOPIC, 'string']);
+  rows.push(['STATE_TOPIC', d.STATE_TOPIC, 'string'], ['CMD_TOPIC', d.CMD_TOPIC, 'string']);
   return {
     id: id('set'), name: 'Settings', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos,
     notes: 'All of Clawd\'s settings live here. See README "Settings".',
@@ -246,16 +247,26 @@ function triggers(tickName, tickSec, mqttNode, mqttEventName, mqttEventCode) {
   ];
 }
 
+// The retained state line (view app, Home Assistant). An MQTT publish is quick,
+// so it stays in the main run, like the view mode always had it.
+function publishState(pos) {
+  return { id: id('mqtt'), name: 'Publish State', type: 'n8n-nodes-base.mqtt', typeVersion: 1, position: pos,
+    credentials: MQTT_CRED, onError: 'continueRegularOutput',
+    parameters: { topic: '={{ $json.publish.topic }}', sendInputData: false, message: '={{ $json.publish.message }}', options: { retain: true, qos: 1 } } };
+}
+
 // ---- push mode --------------------------------------------------------------------
 function pushWorkflow() {
   seq = 0;
   const mqttNode = { id: id('trg'), name: 'AWTRIX MQTT', type: 'n8n-nodes-base.mqttTrigger', typeVersion: 1, position: [-600, 200],
     credentials: MQTT_CRED,
-    notes: 'Buttons and the app on screen. "+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it.',
-    parameters: { topics: '+/state/buttons/+,+/state/apps/active', options: {} } };
+    notes: 'Buttons and the app on screen ("+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it), plus the command topic for Home Assistant, which must match CMD_TOPIC in Settings.',
+    parameters: { topics: `+/state/buttons/+,+/state/apps/active,${E.DEFAULTS.CMD_TOPIC}`, options: {} } };
   const nodes = triggers('Tick every 2s', 2, mqttNode, 'MQTT Event', MQTT_EVENT).concat([
     settings('push', [-160, 200]),
     code('Clawd Engine', ENGINE + ENGINE_WRAPPER, [60, 200], 'Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js.'),
+    ifNode('Has State', '!!$json.publish', [280, 0]),
+    publishState([500, 0]),
     ifNode('Anything To Send', '$json.push || $json.switchTo || !!$json.sound || !!$json.notify', [280, 200]),
     background('Send To AWTRIX', awtrixSubWorkflow(['frame', 'sound', 'burst']), [500, 200])
   ]);
@@ -265,6 +276,8 @@ function pushWorkflow() {
   link(c, 'HA Action (Webhook)', 'HA Event');
   for (const n of ['Tick Event', 'MQTT Event', 'HA Event']) link(c, n, 'Settings');
   link(c, 'Settings', 'Clawd Engine');
+  link(c, 'Clawd Engine', 'Has State');
+  link(c, 'Has State', 'Publish State');
   link(c, 'Clawd Engine', 'Anything To Send');
   link(c, 'Anything To Send', 'Send To AWTRIX');
   return { name: 'Clawd (push mode)', nodes, connections: c, active: false, settings: WF_SETTINGS, meta: { clawdEngine: E.ENGINE_VERSION } };
@@ -281,9 +294,7 @@ function viewWorkflow() {
     settings('view', [-160, 200]),
     code('Clawd Engine', ENGINE + ENGINE_WRAPPER, [60, 200], 'Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js.'),
     ifNode('Has State', '!!$json.publish', [280, 100]),
-    { id: id('mqtt'), name: 'Publish State', type: 'n8n-nodes-base.mqtt', typeVersion: 1, position: [500, 100],
-      credentials: MQTT_CRED, onError: 'continueRegularOutput',
-      parameters: { topic: '={{ $json.publish.topic }}', sendInputData: false, message: '={{ $json.publish.message }}', options: { retain: true, qos: 1 } } },
+    publishState([500, 100]),
     ifNode('Anything To Send', '$json.switchTo || !!$json.notify', [280, 300]),
     background('Send To AWTRIX', awtrixSubWorkflow([]), [500, 300])
   ]);

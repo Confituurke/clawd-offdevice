@@ -82,12 +82,29 @@ test('push workflow: MQTT events are parsed from AWTRIX NG topics', () => {
     { topic: 'awtrixNG/state/buttons/select', message: '1' },
     { topic: 'awtrixNG/state/buttons/select', message: '0' },
     { topic: 'home/clock/state/apps/active', message: 'clawd' },
-    { topic: 'awtrixNG/state/device', message: '{}' }
+    { topic: 'awtrixNG/state/device', message: '{}' },
+    { topic: 'clawd/cmd', message: 'feed' },
+    { topic: 'clawd/cmd', message: '' }
   ], {});
   assert.deepEqual(out, [
     { event: 'button', btn: 'select', prefix: 'awtrixNG' },
-    { event: 'active', app: 'clawd', prefix: 'home/clock' }
+    { event: 'active', app: 'clawd', prefix: 'home/clock' },
+    { event: 'cmd', payload: 'feed' }
   ]);
+});
+
+test('push workflow: listens on the command topic and publishes the retained state line', () => {
+  const wf = load(FILES[0]);
+  const trg = wf.nodes.find((n) => n.name === 'AWTRIX MQTT');
+  assert.ok(trg.parameters.topics.split(',').includes('clawd/cmd'));
+  const pub = wf.nodes.find((n) => n.name === 'Publish State');
+  assert.equal(pub.type, 'n8n-nodes-base.mqtt');
+  assert.equal(pub.parameters.options.retain, true);
+  assert.equal(pub.onError, 'continueRegularOutput');
+  assert.ok(wf.connections['Has State'].main[0].some((l) => l.node === 'Publish State'));
+  assert.ok(wf.connections['Clawd Engine'].main[0].some((l) => l.node === 'Has State'));
+  const settings = wf.nodes.find((n) => n.name === 'Settings').parameters.assignments.assignments.map((a) => a.name);
+  for (const k of ['cfg.STATE_TOPIC', 'cfg.CMD_TOPIC']) assert.ok(settings.includes(k), k);
 });
 
 test('push workflow: burst frames are split and sent 250 ms apart', () => {

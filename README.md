@@ -86,7 +86,13 @@ original Clawd script installed, delete it.
 
 ### 3. Home Assistant (optional)
 
-- **n8n brain (push or view):** add [`homeassistant/rest_command.yaml`](homeassistant/rest_command.yaml)
+- **Over MQTT (any mode, no HA restart):** publish a plain action word (`feed`) or
+  `{"a":"feed"}` to the command topic (`CMD_TOPIC`, default `clawd/cmd`), e.g. with MQTT
+  `button` entities or `mqtt.publish`. In push mode it applies the action and brings Clawd on
+  screen; in view mode it goes the same way the clock's own commands do. The retained state
+  line on `STATE_TOPIC` (see [awtrix/README.md](awtrix/README.md#how-the-pieces-talk)) carries
+  every stat for sensors, in push and view mode alike.
+- **n8n brain (push or view), via the webhook:** add [`homeassistant/rest_command.yaml`](homeassistant/rest_command.yaml)
   (`rest_command: !include homeassistant/rest_command.yaml`, replace `<N8N_HOST>`, restart HA
   fully) and merge [`homeassistant/scripts.yaml`](homeassistant/scripts.yaml) into yours.
 - **Device brain:** merge [`homeassistant/scripts-device.yaml`](homeassistant/scripts-device.yaml)
@@ -117,7 +123,7 @@ The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`,
 | `BURST` | `true` | push mode: extra frames every 250 ms while an effect plays |
 | `OFFSCREEN_REFRESH_SEC` | `30` | push mode: refresh interval while another app is shown |
 | `STALE_AFTER_SEC` | `90` | push mode: red frame after this long without updates (0 = off) |
-| `STATE_TOPIC` / `CMD_TOPIC` | `clawd/state` / `clawd/cmd` | view mode; must match the app's settings |
+| `STATE_TOPIC` / `CMD_TOPIC` | `clawd/state` / `clawd/cmd` | state line out and commands in: the view app and Home Assistant. In view mode they must match the app's settings; in push mode the trigger's topic list must contain `CMD_TOPIC` |
 
 A value n8n can't use falls back to its default; the engine's output lists it under `warnings`.
 
@@ -129,7 +135,7 @@ A value n8n can't use falls back to its default; the engine's output lists it un
   MQTT buttons  ────►│  (rules, state in    ├──► PUT  /api/v1/apps/active         (HA, events)
   + app on screen    │   workflow static    ├──► POST /api/v1/audio/play          (SOUND)
   HA webhook    ────►│   data)              ├──► POST /api/v1/notifications       (NOTIFY)
-  device commands ──►│                      ├──► MQTT clawd/state (retained)      (view)
+  clawd/cmd     ────►│                      ├──► MQTT clawd/state (retained)      (view app, HA)
                      └──────────────────────┘
 ```
 

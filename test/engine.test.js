@@ -194,6 +194,42 @@ test('Home Assistant actions apply and bring Clawd on screen', () => {
   assert.equal(E.run({ event: 'action', name: 'dance' }, store, {}, T0 + 2000).ignore, true);
 });
 
+test('push: Home Assistant commands on the command topic apply and bring Clawd on screen', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  Object.assign(store.clawd, { st: 1, ev: 1, h: 5000 });
+  const r = E.run({ event: 'cmd', payload: 'feed' }, store, {}, T0 + 1000);
+  assert.equal(r.ignore, false);
+  assert.equal(store.clawd.h, 9000);
+  assert.equal(r.switchTo, true);
+  assert.equal(E.run({ event: 'cmd', payload: '{"a":"clean"}' }, store, {}, T0 + 2000).switchTo, true);
+  assert.equal(E.run({ event: 'cmd', payload: 'dance' }, store, {}, T0 + 3000).ignore, true);
+});
+
+test('view: device commands do not switch apps (only HA and big events do)', () => {
+  const store = {};
+  const cfg = { MODE: 'view' };
+  E.run({ event: 'tick' }, store, cfg, T0);
+  Object.assign(store.clawd, { st: 1, ev: 1, h: 5000 });
+  assert.equal(E.run({ event: 'cmd', payload: 'feed' }, store, cfg, T0 + 1000).switchTo, false);
+});
+
+test('push: the state line is published too, for Home Assistant', () => {
+  const store = {};
+  const cfg = { SLEEP_FROM: 0, SLEEP_TO: 0 };
+  const first = E.run({ event: 'tick' }, store, cfg, T0);
+  assert.equal(first.publish.topic, 'clawd/state');
+  assert.equal(first.publish.retain, true);
+  assert.ok(first.publish.message.startsWith('2,0,'), 'egg state line');
+  Object.assign(store.clawd, { st: 1, ev: 1 });
+  noRandom(null, () => {
+    E.run({ event: 'tick' }, store, cfg, T0 + 2000);
+    assert.equal(E.run({ event: 'tick' }, store, cfg, T0 + 4000).publish, null, 'nothing changed');
+    assert.ok(E.run({ event: 'tick' }, store, cfg, T0 + 64000).publish, 'once a minute');
+  });
+  assert.ok(E.run({ event: 'cmd', payload: 'clean' }, store, cfg, T0 + 65000).publish, 'a command publishes at once');
+});
+
 test('big events switch to Clawd unless SWITCH_ON_EVENTS is off', () => {
   const store = {};
   E.run({ event: 'tick' }, store, {}, T0);

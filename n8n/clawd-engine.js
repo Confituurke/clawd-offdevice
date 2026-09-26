@@ -1,43 +1,65 @@
 // ============================================================================
-// Clawd Engine — n8n port of the AWTRIX Berry script "Clawd"
-// Ported 1:1 where practical: same state fields, same decay rates, same
-// evolution thresholds, same menu/action semantics. Runs off-device, so the
-// "out of memory" problem disappears entirely — AWTRIX just renders whatever
-// draw-JSON it's pushed.
+// Clawd Engine — the pet's rules, shared by the n8n workflows and the tests.
 //
-// This file is a readable reference copy. The importable workflow embeds the
-// same functions inside three n8n Code nodes (Normalize Tick, Normalize
-// Button, Clawd Engine) — see n8n_clawd_workflow.json.
+// A port of Blueforcer's AWTRIX Berry script "Clawd" (v1.1). The same state
+// fields, formulas and thresholds as the original, with the timing driven by
+// one setting (HUNGER_EMPTY_HOURS) instead of a fixed 10-second step.
+//
+// This file is the single source of truth. `node scripts/build.js`
+// embeds it into the n8n Code nodes, so never edit the copies inside the
+// workflow JSON by hand. It has no dependencies and runs in Node >= 18 and in
+// n8n's Code node alike.
+//
+// Two modes:
+//   push - n8n renders every frame and pushes it to AWTRIX as a pushed app.
+//   view - the on-device script awtrix/clawd-view.ax draws and handles the
+//          buttons; n8n only keeps the rules and publishes the pet's state
+//          over MQTT.
 // ============================================================================
 
-// ---- CONFIG — edit these -----------------------------------------------
-const PET_NAME = 'Clawd';
-// One decayStep() = one "tick" of hunger/happiness/energy/cleanliness loss,
-// same formulas/amounts as the original Berry script's dec10 branch (which
-// fired every 10 real seconds on-device). Off-device we don't need to match
-// that 1:1 - bump this to slow the whole simulation down. 60 = 6x slower
-// than the original, so an unattended pet can survive a normal night's sleep
-// without starving. Raise further (e.g. 120-180) if it's still too fast.
-const DECAY_INTERVAL_SEC = 60;
+const ENGINE_VERSION = '2.0.0';
 
-// ---- palette (same hex values as the Berry script's self.cm) -----------
+// ---- settings --------------------------------------------------------------
+// Every value can be overridden from the workflow's "Settings" node.
+const DEFAULTS = {
+  MODE: 'push',               // 'push' | 'view'
+  AWTRIX_HOST: '192.168.1.50',// IP or host name of the clock, no http://
+  MQTT_PREFIX: 'awtrixNG',    // AWTRIX NG's MQTT prefix
+  APP_NAME: 'clawd',          // pushed app name (push) / script name (view)
+  PET_NAME: 'Clawd',
+  TZ: 'Europe/Brussels',      // any IANA time zone
+  HUNGER_EMPTY_HOURS: 18,     // awake, full -> empty. The original was ~4 h.
+  EGG_HATCH_MIN: 30,
+  CHILD_AT_HOURS: 12,
+  TEEN_AT_HOURS: 36,
+  ADULT_AT_HOURS: 72,
+  SLEEP_FROM: 22, SLEEP_TO: 8,   // auto-sleep window, local hours
+  NIGHT_FROM: 20, NIGHT_TO: 6,   // night scenery window, local hours
+  SOUND: false,               // play RTTTL effects (off by default, like the original)
+  NOTIFY: false,              // "<name> needs you!" notifications
+  SWITCH_ON_EVENTS: true,     // bring Clawd on screen when it hatches, evolves, falls ill or dies
+  STATE_TOPIC: 'clawd/state', // view mode: n8n -> device
+  CMD_TOPIC: 'clawd/cmd',     // view mode: device -> n8n
+  OFFSCREEN_REFRESH_SEC: 30,  // push mode: refresh the frame this often while Clawd is not shown
+  STALE_AFTER_SEC: 90,        // push mode: AWTRIX draws a red frame if no update arrives in time
+  BURST: true                 // push mode: extra frames while an effect plays
+};
+
+// ---- palette and sprites (same as the original) -----------------------------
 const CM = {
   o: '#D97757', O: '#E58963', q: '#A8553C', d: '#A94F38', c: '#F0906B',
   x: '#C4694D', w: '#FFFFFF', r: '#E05540', e: '#F2E3C8', s: '#C96F4A',
   y: '#FFD34D', m: '#8B5A2B', g: '#93A7C4', t: '#9AA0A6'
 };
 
-// ---- sprites (row-strings, same shapes as the original) ----------------
-// Growth-stage bodies carry two frames (a/b) — mouth/limb pose alternates
-// every ~1.2s so the pet isn't a frozen still image between ticks.
 const SPR = {
   egg:   ['.eee.', 'eeeee', 'esees', 'eeeee', 'eseee', '.eee.'],
   b1: { a: ['c...c', '.ooo.', 'owowo', '.d.d.'],
-        b: ['.....', 'coooc', 'owowo', 'd...d'] },                               // baby
+        b: ['.....', 'coooc', 'owowo', 'd...d'] },                                   // baby
   b2: { a: ['c....c', '.oooo.', 'owoowo', '.oooo.', '.d..d.'],
-        b: ['......', 'cooooc', 'owoowo', '.oooo.', 'd....d'] },                 // child
+        b: ['......', 'cooooc', 'owoowo', '.oooo.', 'd....d'] },                     // child
   b3: { a: ['c.....c', 'c.ooo.c', '.ooooo.', 'owooowo', '.ooooo.', '.d.d.d.'],
-        b: ['.......', 'c.ooo.c', 'coooooc', 'owooowo', '.ooooo.', 'd.d.d.d'] }, // teen
+        b: ['.......', 'c.ooo.c', 'coooooc', 'owooowo', '.ooooo.', 'd.d.d.d'] },     // teen
   a0: { a: ['.y.yy.y.', 'c.OOOO.c', '.OOOOOO.', 'OOwOOwOO', '.OOOOOO.', '..OOOO..', '.d.d.d.d'],
         b: ['..y..y..', 'ccOOOOcc', '.OOOOOO.', 'OOwOOwOO', '.OOOOOO.', '..OOOO..', 'd.d.d.d.'] }, // adult, happy
   a1: { a: ['cc....cc', 'c.oooo.c', '.oooooo.', 'oowoowoo', '.oooooo.', '..oooo..', '.d.d.d.d'],
@@ -51,12 +73,6 @@ const SPR = {
   heart: ['r.r', 'rrr', '.r.']
 };
 
-// Picks frame a or b based on wall-clock time — same 1.2s cadence as the
-// original Berry script's per-draw() frame flip, just sampled once per push.
-function pickFrame(pair) {
-  return (Math.floor(Date.now() / 1200) % 2 === 0) ? pair.a : pair.b;
-}
-
 const GLY = [
   ['.r....r.', '..r..r..', '...rr...', '...rr...', '..r..r..', '.r....r.'],   // 0 EXIT
   ['........', '..yyyy..', '.yyyyyy.', '.mmmmmm.', '.rrrrrr.', '.eeeeee.'],   // 1 FEED
@@ -68,102 +84,180 @@ const GLY = [
   ['.y.y.y..', '..yyy...', 'yyyyyyy.', '..yyy...', '.y.y.y..']                // 7 WAKE
 ];
 const MLAB = ['EXIT', 'FEED', 'PLAY', 'CLEAN', 'MED', 'SLEEP', 'STATS'];
+const STARS = [[3, 0], [8, 1], [13, 0], [1, 2], [15, 2]];
+const BAR_COLORS = ['#D97757', '#E8C33F', '#3FB4E8', '#4FC96F'];
 
-// RTTTL per cosmetic event id (same tunes/roles as the original j_* strings)
+// Effect ids (ev_k) and how long each one shows, in ms (the original's self.T).
+// 1 feed, 2 clean, 3 evolve, 4 hatch, 5 medicine, 6 refused, 7 egg warmed / new
+// egg, 8 play result, 9 death, 10 show stats (view mode only).
+const FX_MS = [0, 1500, 1200, 2200, 2200, 900, 700, 600, 1500, 1500, 0];
+
+// RTTTL per effect id, the same tunes as the original.
 const SND = {
-  1: 'm:d=16,o=5,b=200:g,p,g,p,g',            // feed / munch
-  2: 'c:d=32,o=6,b=220:e,g',                  // clean / chirp
-  3: 'e:d=16,o=5,b=140:c,e,g,8c6,16p,8e6',    // evolve
-  4: 'h:d=16,o=6,b=180:c,e,g,c7',             // hatch
-  5: 'c:d=32,o=6,b=220:e,g',                  // med / heal
-  6: 'x:d=16,o=4,b=200:c',                    // refused
-  7: 'c:d=32,o=6,b=220:e,g',                  // warm egg
-  8: 'w:d=16,o=6,b=180:c,e,g,8c7',            // play
-  9: 'd:d=4,o=4,b=70:8e,8d,c'                 // death
+  1: 'm:d=16,o=5,b=200:g,p,g,p,g',
+  2: 'c:d=32,o=6,b=220:e,g',
+  3: 'e:d=16,o=5,b=140:c,e,g,8c6,16p,8e6',
+  4: 'h:d=16,o=6,b=180:c,e,g,c7',
+  5: 'c:d=32,o=6,b=220:e,g',
+  6: 'x:d=16,o=4,b=200:c',
+  7: 'c:d=32,o=6,b=220:e,g',
+  8: 'w:d=16,o=6,b=180:c,e,g,8c7',
+  9: 'd:d=4,o=4,b=70:8e,8d,c'
 };
+const SND_SICK = 's:d=8,o=5,b=160:e,p,e';
 
+// Home Assistant / device command words -> action ids.
+const ACTIONS = { exit: 0, feed: 1, play: 2, clean: 3, med: 4, sleep: 5, stats: 6, reset: 7, wake: 8, warm: 9, newegg: 10 };
+
+// ---- helpers -----------------------------------------------------------------
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function c10k(v) { return clamp(v, 0, 10000); }
 
-function freshState(gen) {
+function toBool(v, dflt) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v !== 0;
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(t)) return true;
+    if (['false', '0', 'no', 'off', ''].includes(t)) return false;
+  }
+  return dflt;
+}
+function toNum(v, dflt, lo, hi) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!Number.isFinite(n)) return dflt;
+  return clamp(n, lo, hi);
+}
+function inRange(v, lo, hi) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) && n >= lo && n <= hi;
+}
+function validTz(tz) {
+  try { new Intl.DateTimeFormat('en-GB', { timeZone: tz }); return true; } catch (e) { return false; }
+}
+
+// Normalise whatever the Settings node hands us. Unknown or broken values fall
+// back to the defaults, and every fallback is reported in cfg.warnings.
+function makeConfig(raw) {
+  raw = raw || {};
+  const cfg = Object.assign({}, DEFAULTS);
+  const warnings = [];
+  const pick = (k) => (raw[k] !== undefined && raw[k] !== null && raw[k] !== '' ? raw[k] : undefined);
+
+  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC']) {
+    if (pick(k) !== undefined) cfg[k] = String(pick(k)).trim();
+  }
+  cfg.AWTRIX_HOST = cfg.AWTRIX_HOST.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  cfg.PET_NAME = cfg.PET_NAME.slice(0, 12);
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(cfg.APP_NAME)) { warnings.push('APP_NAME'); cfg.APP_NAME = DEFAULTS.APP_NAME; }
+
+  const mode = String(pick('MODE') || DEFAULTS.MODE).toLowerCase();
+  if (mode === 'push' || mode === 'view') cfg.MODE = mode; else warnings.push('MODE');
+
+  if (pick('TZ') !== undefined) {
+    const tz = String(pick('TZ')).trim();
+    if (validTz(tz)) cfg.TZ = tz; else warnings.push('TZ');
+  }
+
+  const nums = {
+    HUNGER_EMPTY_HOURS: [0.5, 24 * 30], EGG_HATCH_MIN: [1, 24 * 60],
+    CHILD_AT_HOURS: [0, 24 * 365], TEEN_AT_HOURS: [0, 24 * 365], ADULT_AT_HOURS: [0, 24 * 365],
+    SLEEP_FROM: [0, 23], SLEEP_TO: [0, 23], NIGHT_FROM: [0, 23], NIGHT_TO: [0, 23],
+    OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400]
+  };
+  for (const [k, [lo, hi]] of Object.entries(nums)) {
+    if (pick(k) === undefined) continue;
+    const n = toNum(pick(k), NaN, lo, hi);
+    if (Number.isFinite(n)) cfg[k] = n;
+    if (!inRange(pick(k), lo, hi)) warnings.push(k);          // unusable, or clamped into range
+  }
+  for (const k of ['SLEEP_FROM', 'SLEEP_TO', 'NIGHT_FROM', 'NIGHT_TO']) cfg[k] = Math.floor(cfg[k]);
+  if (!(cfg.CHILD_AT_HOURS <= cfg.TEEN_AT_HOURS && cfg.TEEN_AT_HOURS <= cfg.ADULT_AT_HOURS)) {
+    warnings.push('CHILD/TEEN/ADULT_AT_HOURS');
+    cfg.CHILD_AT_HOURS = DEFAULTS.CHILD_AT_HOURS; cfg.TEEN_AT_HOURS = DEFAULTS.TEEN_AT_HOURS; cfg.ADULT_AT_HOURS = DEFAULTS.ADULT_AT_HOURS;
+  }
+  for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST']) {
+    if (pick(k) !== undefined) cfg[k] = toBool(pick(k), DEFAULTS[k]);
+  }
+
+  // Derived timing. The original ran one decay step every 10 s and took
+  // 10000 / 7 steps (~3.97 h) to empty hunger. Everything that was measured in
+  // steps or in "original seconds" is stretched by the same factor.
+  cfg.STEP_SEC = cfg.HUNGER_EMPTY_HOURS * 3600 * 7 / 10000;
+  cfg.SCALE = cfg.STEP_SEC / 10;
+  cfg.warnings = warnings;
+  return cfg;
+}
+
+// Local hour of `ms` in the configured zone (0-23).
+function hourIn(tz, ms) {
+  try {
+    const f = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: tz });
+    const h = parseInt(f.format(new Date(ms)), 10);
+    if (Number.isFinite(h)) return h % 24;
+  } catch (e) { /* fall through */ }
+  return new Date(ms).getHours();
+}
+function inWindow(h, from, to) {
+  if (from === to) return false;
+  return from < to ? (h >= from && h < to) : (h >= from || h < to);
+}
+
+// ---- state -------------------------------------------------------------------
+function freshState(gen, nowMs) {
   return {
-    st: 0, ev: 0, va: 1,
+    st: 0, ev: 0, va: 1,                    // stage (0 egg, 1 alive, 2 dead), evolution 0-4, adult variant
     h: 10000, ha: 10000, en: 10000, cl: 10000, hp: 10000,
-    sl: 0, slo: 0, sk: 0,
-    age: 0, warm: 0, cs: 0, gen: gen || 1,
-    pp: 0, pt: 0, cf: 0,
-    ui: 0, mi: 0, dwell: 0, rp: 0,
-    ev_k: 0, ev_t0: 0, stat_open: 0,
+    sl: 0, slo: 0, sk: 0,                   // asleep, manual sleep override, sick
+    age: 0, warm: 0, cs: 0, gen: gen || 1,  // age (s), egg warmth (s), care score, generation
+    pp: 0, pt: 0, cf: 0,                    // poops, potty timer (s), "stat hit zero" flags
+    ui: 0, mi: 0, dwell: 0, rp: 0,          // push-mode UI: 0 scene, 1 menu, 3 stats, 5 new-egg confirm
+    ev_k: 0, ev_t0: 0, fx: 0, hits: 1,      // last effect id, its start (ms), effect counter, play hits
+    stat_open: 0, stat_ms: 8000,
     lastNotify: 0, decAcc: 0, aslast: null,
-    last_ts: Math.floor(Date.now() / 1000)
+    last_ts: Math.floor((nowMs || Date.now()) / 1000),
+    saved: 0, v: 2
   };
 }
 
-function decode(rows) {
-  const out = [];
-  for (let y = 0; y < rows.length; y++) {
-    const row = rows[y];
-    for (let x = 0; x < row.length; x++) {
-      const c = CM[row[x]];
-      if (c) out.push([x, y, c]);
-    }
-  }
-  return out;
+// Fill in fields a state saved by an older version is missing, so a running
+// pet survives the upgrade.
+function upgradeState(s, nowMs) {
+  const f = freshState(s && s.gen, nowMs);
+  for (const k of Object.keys(f)) if (s[k] === undefined) s[k] = f[k];
+  s.v = 2;
+  return s;
 }
 
-function blit(draw, spriteRows, ox, oy, overrideColor) {
-  for (const [x, y, c] of decode(spriteRows)) {
-    draw.push(['pixel', ox + x, oy + y, overrideColor || c]);
-  }
-}
+function fx(s, k, nowMs) { s.ev_k = k; s.ev_t0 = nowMs; s.fx = (s.fx || 0) + 1; }
 
-// Like blit(), but swaps the 'w' (eye) pixels for a skin tone when blinking -
-// gives the pet a closed-eye frame every few seconds instead of a fixed stare.
-function blitBlink(draw, spriteRows, ox, oy, skinColor, blinking) {
-  for (let y = 0; y < spriteRows.length; y++) {
-    const row = spriteRows[y];
-    for (let x = 0; x < row.length; x++) {
-      const ch = row[x];
-      let color = CM[ch];
-      if (!color) continue;
-      if (blinking && ch === 'w') color = skinColor;
-      draw.push(['pixel', ox + x, oy + y, color]);
-    }
-  }
-}
-
-// Fixed sky positions (x,y), twinkling on/off in a rotating pattern - same
-// idea as the original's stpos flicker, simplified to a handful of points.
-const STARS = [[3, 0], [8, 1], [13, 0], [1, 2], [15, 2]];
-
-// ---- offline catch-up: 30% rate, capped at 12h, same as _catchup() -----
-function applyCatchup(s, dtSec) {
+// ---- time --------------------------------------------------------------------
+// Offline catch-up, same shape as the original's boot catch-up: the missed time
+// (capped at 12 h) runs at 30% of the live awake rate.
+function applyCatchup(s, dtSec, cfg) {
   const el = Math.min(dtSec, 43200);
   s.age += el;
-  if (s.st === 1) {
-    const d = el * 3 / 10;
-    s.h = clamp(s.h - d * 7 / 10, 0, 10000);
-    s.ha = clamp(s.ha - d / 2, 0, 10000);
-    s.en = clamp(s.en + d / 4, 0, 10000);
-    s.cl = clamp(s.cl - d / 5, 0, 10000);
-    if (s.pt > 0) {
-      s.pt -= d;
-      if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = clamp(s.cl - 1500, 0, 10000); }
-    }
+  if (s.st !== 1) return;
+  const k = el * 0.3 / cfg.STEP_SEC;        // equivalent decay steps
+  s.h = c10k(s.h - 7 * k);
+  s.ha = c10k(s.ha - 5 * k);
+  s.en = c10k(s.en + 2.5 * k);
+  s.cl = c10k(s.cl - 2 * k);
+  if (s.pt > 0) {
+    s.pt -= el * 0.3;
+    if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = c10k(s.cl - 1500); }
   }
 }
 
-// ---- one decay step (fires every DECAY_INTERVAL_SEC), same formulas as ----
-// ---- the original Berry script's dec10 branch --------------------------
-function decayStep(s) {
-  if (s.st !== 1) return; // already dead - don't keep mutating a corpse
-  // if multiple steps batch into one call (large dt) and this step kills the
-  // pet, later steps in the same batch must not keep decaying it further
+// One decay step: the original's 10-second branch, formula for formula.
+function decayStep(s, nowMs) {
+  if (s.st !== 1) return;
   const sl = s.sl === 1;
   const xtra = (s.pp >= 2 || s.sk === 1) ? 5 : 0;
-  s.h  = clamp(s.h  - (sl ? 3 : 7), 0, 10000);
-  s.ha = clamp(s.ha - (sl ? 0 : 5) - xtra, 0, 10000);
-  s.en = clamp(s.en + (sl ? 12 : -4), 0, 10000);
-  s.cl = clamp(s.cl - 2 - 4 * s.pp, 0, 10000);
+  s.h = c10k(s.h - (sl ? 3 : 7));
+  s.ha = c10k(s.ha - (sl ? 0 : 5) - xtra);
+  s.en = c10k(s.en + (sl ? 12 : -4));
+  s.cl = c10k(s.cl - 2 - 4 * s.pp);
 
   const vals = [s.h, s.ha, s.en, s.cl];
   let cf = s.cf;
@@ -187,327 +281,491 @@ function decayStep(s) {
   if (s.h === 0) dmg += 12;
   if (s.cl === 0) dmg += 6;
   if (s.sk === 1) dmg += 8;
-  if (dmg > 0) s.hp = clamp(s.hp - dmg, 0, 10000);
-  else s.hp = clamp(s.hp + 5, 0, 10000);
+  s.hp = c10k(dmg > 0 ? s.hp - dmg : s.hp + 5);
 
-  if (s.hp <= 0) {
-    s.st = 2; s.ev_k = 9; s.ev_t0 = Date.now(); s.ui = 0;
-  }
+  if (s.hp <= 0) { s.st = 2; s.ui = 0; fx(s, 9, nowMs); }
 }
 
-function evolve(s, stage) {
+function evolve(s, stage, nowMs) {
   s.ev = stage;
-  if (stage === 1) { s.st = 1; s.ev_k = 4; }
-  else {
-    if (stage === 4) {
-      s.va = s.cs >= 200 ? 0 : (s.cs <= -100 ? 2 : 1);
-    }
-    s.ev_k = 3;
-  }
-  s.ev_t0 = Date.now();
+  if (stage === 1) { s.st = 1; fx(s, 4, nowMs); return; }
+  if (stage === 4) s.va = s.cs >= 200 ? 0 : (s.cs <= -100 ? 2 : 1);
+  fx(s, 3, nowMs);
 }
 
-function checkEvolution(s) {
+function checkEvolution(s, cfg, nowMs) {
   if (s.st !== 1) return;
-  if (s.ev === 1 && s.age >= 43200) evolve(s, 2);
-  else if (s.ev === 2 && s.age >= 129600) evolve(s, 3);
-  else if (s.ev === 3 && s.age >= 259200) evolve(s, 4);
+  if (s.ev === 1 && s.age >= cfg.CHILD_AT_HOURS * 3600) evolve(s, 2, nowMs);
+  else if (s.ev === 2 && s.age >= cfg.TEEN_AT_HOURS * 3600) evolve(s, 3, nowMs);
+  else if (s.ev === 3 && s.age >= cfg.ADULT_AT_HOURS * 3600) evolve(s, 4, nowMs);
 }
 
-// ---- time advance: called every invocation, tick or button -------------
-function advanceTime(s) {
-  const now = Math.floor(Date.now() / 1000);
+function isNight(s, cfg, nowMs) {
+  return s.sl === 1 || inWindow(hourIn(cfg.TZ, nowMs), cfg.NIGHT_FROM, cfg.NIGHT_TO);
+}
+
+// Called on every invocation, whatever triggered it.
+function advanceTime(s, cfg, nowMs) {
+  const now = Math.floor(nowMs / 1000);
   const dt = Math.max(0, now - (s.last_ts || now));
   s.last_ts = now;
 
   if (s.st === 0) {
-    s.age += dt;
-    if (s.age + s.warm >= 1800) evolve(s, 1);
+    s.age += dt > 120 ? Math.min(dt, 43200) : dt;         // outages count 12 h at most
+    if (s.age + s.warm >= cfg.EGG_HATCH_MIN * 60) evolve(s, 1, nowMs);
     return;
   }
-  if (s.st !== 1) return; // dead: nothing decays
+  if (s.st !== 1) return;
 
-  if (dt > 60) { applyCatchup(s, dt); checkEvolution(s); return; }
+  if (dt > 120) { applyCatchup(s, dt, cfg); checkEvolution(s, cfg, nowMs); return; }
 
   s.age += dt;
 
-  // Auto-sleep 22-08. A manual override (slo != 0) lasts only until the next
-  // switch point - when `auto` flips relative to the last time we checked,
-  // the override is cleared and the schedule takes back control. Without
-  // this, one SLEEP/WAKE button press would stick forever and the schedule
-  // would never engage again.
-  const hr = new Date().getHours();
-  const auto = hr >= 22 || hr < 8;
-  if (s.aslast === null || s.aslast === undefined) {
-    s.aslast = auto;
-  } else if (auto !== s.aslast) {
-    s.aslast = auto;
-    s.slo = 0;
-  }
+  // Auto-sleep. A manual SLEEP/WAKE lasts until the schedule's next switch
+  // point, then the schedule takes over again (same as the original).
+  const auto = inWindow(hourIn(cfg.TZ, nowMs), cfg.SLEEP_FROM, cfg.SLEEP_TO);
+  if (s.aslast === null || s.aslast === undefined) s.aslast = auto;
+  else if (auto !== s.aslast) { s.aslast = auto; s.slo = 0; }
   if (s.slo === 0) s.sl = auto ? 1 : 0;
 
   if (s.pt > 0 && s.sl !== 1) {
     s.pt -= dt;
-    if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = clamp(s.cl - 1500, 0, 10000); }
+    if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = c10k(s.cl - 1500); }
   }
 
-  // Accumulate real seconds across calls (each tick only contributes ~2s) and
-  // fire a decay step every time it crosses a DECAY_INTERVAL_SEC boundary -
-  // carrying the remainder forward instead of resetting it. Fixes: with a
-  // per-call Math.floor(dt/N), a steady 2s-interval tick never reached N in a
-  // single call and decay silently never fired.
+  // Accumulate real seconds across calls and fire a step each time the total
+  // crosses STEP_SEC, carrying the remainder forward.
   s.decAcc = (s.decAcc || 0) + dt;
-  const capSteps = Math.ceil(3600 / DECAY_INTERVAL_SEC); // cap: 1h worth per call
-  const steps = Math.min(capSteps, Math.floor(s.decAcc / DECAY_INTERVAL_SEC));
-  s.decAcc -= steps * DECAY_INTERVAL_SEC;
-  for (let i = 0; i < steps; i++) decayStep(s);
+  const steps = Math.min(Math.ceil(3600 / cfg.STEP_SEC), Math.floor(s.decAcc / cfg.STEP_SEC));
+  s.decAcc -= steps * cfg.STEP_SEC;
+  for (let i = 0; i < steps; i++) decayStep(s, nowMs);
 
-  checkEvolution(s);
+  checkEvolution(s, cfg, nowMs);
 }
 
-// ---- menu / reset dwell timers, checked every invocation ---------------
-function checkDwell(s) {
-  const now = Date.now();
-  if (s.ui === 1 && now - s.dwell >= 2000) {
-    action(s, s.mi);
-  } else if (s.ui === 5) {
-    if (s.rp === 0 && now - s.dwell >= 6000) {
-      s.ui = 0;
-    } else if (s.rp === 1 && now - s.dwell >= 3000) {
-      const gen = s.gen;
-      Object.assign(s, freshState(gen + 1));
-      s.ev_k = 7; s.ev_t0 = now;
-    }
-  } else if (s.ui === 3 && now - s.stat_open >= 8000) {
-    s.ui = 0;
-  }
+// ---- actions -----------------------------------------------------------------
+function statsText(s, cfg) {
+  const a = s.age;
+  return `${cfg.PET_NAME}  AGE ${Math.floor(a / 86400)}d${Math.floor((a % 86400) / 3600)}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`;
 }
 
-// ---- FEED / PLAY / CLEAN / MED / SLEEP / STATS, same semantics ---------
-function action(s, id) {
+// Apply one action. `opt.hits` (0-3) is a Star Catch result from the device;
+// without it PLAY is the push mode's instant version.
+function action(s, id, cfg, nowMs, opt) {
+  opt = opt || {};
   s.ui = 0;
-  if (id === 1) {
-    if (s.sl === 1 || s.st !== 1) { s.ev_k = 6; }
+  if (id === 1) {                                        // FEED
+    if (s.sl === 1 || s.st !== 1) fx(s, 6, nowMs);
     else {
-      if (s.h > 9000) s.ha = clamp(s.ha - 500, 0, 10000);
+      if (s.h > 9000) s.ha = c10k(s.ha - 500);
       else if (s.h < 7000) s.cs += 10;
-      s.h = clamp(s.h + 4000, 0, 10000);
-      s.pt = 2700 + Math.floor(Math.random() * 2700);
-      s.ev_k = 1;
+      s.h = c10k(s.h + 4000);
+      s.pt = (2700 + Math.floor(Math.random() * 2700)) * cfg.SCALE;
+      fx(s, 1, nowMs);
     }
-  } else if (id === 2) { // PLAY — instant, no minigame (see note in README)
-    if (s.sl === 1 || s.st !== 1 || s.en < 1500) { s.ev_k = 6; }
-    else {
-      s.ha = clamp(s.ha + 1500, 0, 10000);
-      s.en = clamp(s.en - 800, 0, 10000);
+  } else if (id === 2) {                                 // PLAY
+    if (s.sl === 1 || s.st !== 1 || s.en < 1500) fx(s, 6, nowMs);
+    else if (Number.isInteger(opt.hits)) {
+      const h = clamp(opt.hits, 0, 3);
+      s.ha = c10k(s.ha + 1000 * h + (h === 3 ? 500 : 0));
+      s.en = c10k(s.en - 800);
+      if (h >= 2) s.cs += 10;
+      s.hits = h;
+      fx(s, 8, nowMs);
+    } else {
+      s.ha = c10k(s.ha + 1500);
+      s.en = c10k(s.en - 800);
       s.cs += 5;
-      s.ev_k = 8;
+      s.hits = 1;
+      fx(s, 8, nowMs);
     }
-  } else if (id === 3) {
-    if (s.sl === 1) { s.ev_k = 6; }
-    else {
-      if (s.pp > 0) s.cs += 10;
-      s.pp = 0; s.cl = 10000; s.ev_k = 2;
-    }
-  } else if (id === 4) {
-    if (s.sk === 1) { s.sk = 0; s.cs += 10; s.ha = clamp(s.ha - 500, 0, 10000); s.ev_k = 5; }
-    else { s.ev_k = 6; }
-  } else if (id === 5) {
+  } else if (id === 3) {                                 // CLEAN
+    if (s.sl === 1 || s.st !== 1) fx(s, 6, nowMs);
+    else { if (s.pp > 0) s.cs += 10; s.pp = 0; s.cl = 10000; fx(s, 2, nowMs); }
+  } else if (id === 4) {                                 // MED
+    if (s.sk === 1 && s.st === 1) { s.sk = 0; s.cs += 10; s.ha = c10k(s.ha - 500); fx(s, 5, nowMs); }
+    else fx(s, 6, nowMs);
+  } else if (id === 5) {                                 // SLEEP toggle
+    if (s.st !== 1) return;
     if (s.sl === 1) { s.slo = 1; s.sl = 0; } else { s.slo = 2; s.sl = 1; }
-  } else if (id === 6) {
-    s.ui = 3; s.stat_open = Date.now();
-  } else if (id === 7) { // RESET - only takes effect while dead, skips the
-    // on-device two-press confirm dance since a dashboard button already
-    // requires a deliberate tap
+  } else if (id === 6) {                                 // STATS
+    if (cfg.MODE === 'view') { fx(s, 10, nowMs); return; } // the device shows them
+    s.ui = 3; s.stat_open = nowMs;
+    // one pass of scrolling text at ~21 px/s, ~4 px per character, + hold
+    s.stat_ms = Math.round(((statsText(s, cfg).length * 4 + 32) / 21) * 1000) + 1500;
+  } else if (id === 7 || id === 10) {                    // RESET / NEW EGG - only while dead
     if (s.st === 2) {
-      const gen = s.gen;
-      Object.assign(s, freshState(gen + 1));
-      s.ev_k = 7;
+      const gen = s.gen, n = s.fx;
+      Object.assign(s, freshState(gen + 1, nowMs));
+      s.fx = n;                                          // keep the effect counter moving
+      fx(s, 7, nowMs);
     }
-  } else if (id === 8) { // WAKE - force awake; no-op if already awake
-    if (s.sl === 1) { s.slo = 1; s.sl = 0; }
+  } else if (id === 8) {                                 // WAKE
+    if (s.st === 1 && s.sl === 1) { s.slo = 1; s.sl = 0; }
+  } else if (id === 9) {                                 // WARM the egg
+    if (s.st === 0) { s.warm = Math.min(s.warm + 60, 900); fx(s, 7, nowMs); }
   }
-  s.ev_t0 = Date.now();
 }
 
-function onButton(s, btn) {
-  const now = Date.now();
-  if (btn !== 'select') {
-    if (s.ui !== 0) s.ui = 0;
-    return;
-  }
-  if (s.st === 0) { // warm the egg
-    s.warm = Math.min(s.warm + 60, 900);
-    s.ev_k = 7; s.ev_t0 = now;
-  } else if (s.st === 2) { // dead: two-step restart
-    if (s.ui === 5) {
-      if (s.rp === 0) { s.rp = 1; s.dwell = now; }
-      else { s.ui = 0; }
-    } else { s.ui = 5; s.rp = 0; s.dwell = now; }
-  } else if (s.ui === 0) {
-    s.ui = 1; s.mi = 0; s.dwell = now;
-  } else if (s.ui === 1) {
-    s.mi = (s.mi + 1) % 7;
-    s.dwell = now;
-  } else if (s.ui === 3) {
+// Menu and "new egg" timers, checked on every invocation (push mode UI).
+function checkDwell(s, cfg, nowMs) {
+  if (s.ui === 1 && nowMs - s.dwell >= 2000) {
+    action(s, s.mi, cfg, nowMs);
+  } else if (s.ui === 5) {
+    if (s.rp === 0 && nowMs - s.dwell >= 6000) s.ui = 0;
+    else if (s.rp === 1 && nowMs - s.dwell >= 3000) action(s, 10, cfg, nowMs);
+  } else if (s.ui === 3 && nowMs - s.stat_open >= (s.stat_ms || 8000)) {
     s.ui = 0;
   }
 }
 
-// ---- render current state to an AWTRIX draw-payload --------------------
-function renderPayload(s) {
-  if (s.ui === 3) {
-    const a = s.age;
-    const days = Math.floor(a / 86400), hrs = Math.floor((a % 86400) / 3600);
-    return {
-      text: `${PET_NAME}  AGE ${days}d${hrs}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`,
-      textColor: '#F0E6D8', scroll: true
-    };
-  }
+// A physical button press (push mode). Only called while Clawd is on screen.
+function onButton(s, btn, cfg, nowMs) {
+  if (btn !== 'select') { s.ui = 0; return; }
+  if (s.st === 0) action(s, 9, cfg, nowMs);
+  else if (s.st === 2) {
+    if (s.ui === 5) {
+      if (s.rp === 0) { s.rp = 1; s.dwell = nowMs; } else s.ui = 0;
+    } else { s.ui = 5; s.rp = 0; s.dwell = nowMs; }
+  } else if (s.ui === 0) { s.ui = 1; s.mi = 0; s.dwell = nowMs; }
+  else if (s.ui === 1) { s.mi = (s.mi + 1) % 7; s.dwell = nowMs; }
+  else if (s.ui === 3) s.ui = 0;
+}
 
-  const draw = [['rectFill', 0, 0, 32, 8, '#000000']];
+// ---- rendering (push mode) ------------------------------------------------------
+// Sprites are sent as one "pixels" command per colour, which keeps a frame
+// around 1 KB instead of 2 KB.
+function Canvas() { this.cmds = []; this.px = new Map(); }
+Canvas.prototype.pixel = function (x, y, c) {
+  if (!this.px.has(c)) this.px.set(c, []);
+  this.px.get(c).push(x, y);
+};
+Canvas.prototype.flush = function () {
+  for (const [c, pts] of this.px) this.cmds.push(['pixels', c].concat(pts));
+  this.px = new Map();
+};
+Canvas.prototype.cmd = function (a) { this.flush(); this.cmds.push(a); };
+Canvas.prototype.sprite = function (rows, ox, oy, over, eyes) {
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      const ch = rows[y][x];
+      let c = CM[ch];
+      if (!c) continue;
+      if (eyes && ch === 'w') c = eyes;
+      this.pixel(ox + x, oy + y, over || c);
+    }
+  }
+};
+Canvas.prototype.done = function () { this.flush(); return this.cmds; };
+
+function creature(s) {
+  if (s.ev === 1) return { pair: SPR.b1, w: 5, h: 4, skin: CM.o };
+  if (s.ev === 2) return { pair: SPR.b2, w: 6, h: 5, skin: CM.o };
+  if (s.ev === 3) return { pair: SPR.b3, w: 7, h: 6, skin: CM.o };
+  if (s.va === 0) return { pair: SPR.a0, w: 8, h: 7, skin: CM.O };
+  if (s.va === 2) return { pair: SPR.a2, w: 8, h: 7, skin: CM.q };
+  return { pair: SPR.a1, w: 8, h: 7, skin: CM.o };
+}
+
+function withLifetime(p, cfg) {
+  if (cfg.STALE_AFTER_SEC > 0) { p.lifetimeMs = Math.round(cfg.STALE_AFTER_SEC * 1000); p.lifetimeExpiry = 'mark'; }
+  return p;
+}
+
+// Render the push-mode frame for time t (ms).
+function render(s, cfg, t) {
+  if (s.ui === 3) {
+    return withLifetime({ text: statsText(s, cfg), textColor: '#F0E6D8', repeat: 1 }, cfg);
+  }
+  const cv = new Canvas();
 
   if (s.ui === 1) {
     let lab = MLAB[s.mi], glyph = GLY[s.mi];
     if (s.mi === 5 && s.sl === 1) { lab = 'WAKE'; glyph = GLY[7]; }
-    blit(draw, glyph, 0, 1);
-    draw.push(['text', 11, 1, lab, '#F0E6D8']);
-    draw.push(['rectFill', 0, 7, 32, 1, '#1A1A1A']);
-    const fw = clamp(Math.floor((Date.now() - s.dwell) * 32 / 2000), 0, 32);
-    if (fw > 0) draw.push(['rectFill', 0, 7, fw, 1, '#D97757']);
-    return { draw };
+    cv.sprite(glyph, 0, 1);
+    cv.cmd(['text', 11, 1, lab, '#F0E6D8']);
+    cv.cmd(['rectFill', 0, 7, 32, 1, '#1A1A1A']);
+    const fw = clamp(Math.floor((t - s.dwell) * 32 / 2000), 0, 32);
+    if (fw > 0) cv.cmd(['rectFill', 0, 7, fw, 1, '#D97757']);
+    return withLifetime({ draw: cv.done() }, cfg);
   }
 
   if (s.ui === 5) {
-    draw.push(['rectFill', 0, 7, 32, 1, '#1A1A1A']);
-    if (s.rp === 0) {
-      draw.push(['text', 7, 1, 'NEW EGG?', '#8A8178']);
-    } else {
-      draw.push(['text', 7, 1, 'NEW EGG?', '#F0E6D8']);
-      const fw = clamp(Math.floor((Date.now() - s.dwell) * 32 / 3000), 0, 32);
-      if (fw > 0) draw.push(['rectFill', 0, 7, fw, 1, '#D97757']);
+    cv.cmd(['rectFill', 0, 7, 32, 1, '#1A1A1A']);
+    cv.cmd(['text', 7, 1, 'NEW EGG?', s.rp === 0 ? '#8A8178' : '#F0E6D8']);
+    if (s.rp === 1) {
+      const fw = clamp(Math.floor((t - s.dwell) * 32 / 3000), 0, 32);
+      if (fw > 0) cv.cmd(['rectFill', 0, 7, fw, 1, '#D97757']);
     }
-    return { draw };
+    return withLifetime({ draw: cv.done() }, cfg);
   }
 
   if (s.st === 2) {
-    draw.push(['line', 0, 7, 16, 7, '#1E2430']);
-    blit(draw, SPR.tomb, 4, 1);
-    blit(draw, SPR.ghost, 11, (Math.floor(Date.now() / 800) % 2 === 0) ? 1 : 2);
-    return { draw };
+    cv.cmd(['line', 0, 7, 16, 7, '#1E2430']);
+    cv.sprite(SPR.tomb, 4, 1);
+    cv.sprite(SPR.ghost, 11, (Math.floor(t / 800) % 2 === 0) ? 1 : 2);
+    return withLifetime({ draw: cv.done() }, cfg);
   }
 
-  const hr = new Date().getHours();
-  const night = s.sl === 1 || hr >= 20 || hr < 6;
-  draw.push(['line', 0, 7, 16, 7, night ? '#14203A' : '#1E4D1E']);
-  draw.push(['rectFill', 1, 0, 2, 2, night ? '#8C8655' : '#9A8430']);
-
+  const night = isNight(s, cfg, t);
+  cv.cmd(['line', 0, 7, 16, 7, night ? '#14203A' : '#1E4D1E']);
+  cv.cmd(['rectFill', 1, 0, 2, 2, night ? '#8C8655' : '#9A8430']);
   if (night) {
-    // one star "goes dark" per 400ms tick, rotating through the set
-    const off = Math.floor(Date.now() / 400) % STARS.length;
-    STARS.forEach(([sx, sy], i) => {
-      if (i !== off) draw.push(['pixel', sx, sy, '#3A3A3A']);
-    });
+    for (let i = 0; i < STARS.length; i++) {
+      if ((Math.floor(t / 400) + i * 2) % 5 !== 0) cv.pixel(STARS[i][0], STARS[i][1], '#383838');
+    }
+  } else {
+    const cx = Math.floor(t / 900) % 46 - 6;                 // drifting cloud
+    if (cx >= -2 && cx <= 14) for (let i = 0; i < 3; i++) if (cx + i >= 0 && cx + i <= 14) cv.pixel(cx + i, 1, '#2A2A2A');
   }
 
-  // eyes close for ~150ms every 4s
-  const blinking = (Date.now() % 4000) < 150;
+  const ed = t - s.ev_t0;
+  const active = (k) => s.ev_k === k && ed >= 0 && ed < FX_MS[k];
 
   if (s.st === 0) {
-    const wob = Math.floor(Date.now() / 700) % 2; // 1px side-to-side wobble
-    blit(draw, SPR.egg, 5 + wob, 1);
-    const pr = clamp(Math.floor((s.age + s.warm) * 17 / 1800), 0, 17);
-    if (pr > 0) draw.push(['rectFill', 0, 7, pr, 1, '#D97757']);
+    cv.sprite(SPR.egg, (Math.floor(t / 700) % 2 === 0) ? 5 : 6, 1);
+    const pr = clamp(Math.floor((s.age + s.warm) * 17 / (cfg.EGG_HATCH_MIN * 60)), 0, 17);
+    if (pr > 0) cv.cmd(['rectFill', 0, 7, pr, 1, '#D97757']);
   } else {
-    let pair, w, h, skin;
-    if (s.ev === 1) { pair = SPR.b1; w = 5; h = 4; skin = CM.o; }
-    else if (s.ev === 2) { pair = SPR.b2; w = 6; h = 5; skin = CM.o; }
-    else if (s.ev === 3) { pair = SPR.b3; w = 7; h = 6; skin = CM.o; }
-    else if (s.va === 0) { pair = SPR.a0; w = 8; h = 7; skin = CM.O; }
-    else if (s.va === 2) { pair = SPR.a2; w = 8; h = 7; skin = CM.q; }
-    else { pair = SPR.a1; w = 8; h = 7; skin = CM.o; }
-    const asleep = s.sl === 1;
-    // no mouth/limb flip while asleep - one still frame, same as the
-    // original's f0-only sleeping pose (no f1 alternation)
-    const frame = asleep ? pair.a : pickFrame(pair);
-    const ox = Math.floor((17 - w) / 2), oy = 7 - h;
-
-    for (let i = 0; i < s.pp; i++) blit(draw, SPR.poop, 12 + i, 5 - i);
-    // eyes stay shut for the whole nap, not just a quick blink
-    blitBlink(draw, frame, ox, oy, skin, asleep || blinking);
-    if (asleep) draw.push(['text', ox + w + 1, 3, 'z', '#5C7FBF']);
-    if (s.sk === 1) { draw.push(['pixel', 0, 0, '#35C24A']); draw.push(['pixel', 0, 1, '#35C24A']); }
-
-    const ed = Date.now() - s.ev_t0;
-    if ((s.ev_k === 1 || s.ev_k === 8) && ed < 900) blit(draw, SPR.heart, 7, 0);
-    else if (s.ev_k === 2 && ed < 1200) {
-      const bx = Math.floor(ed * 17 / 1200);
-      draw.push(['line', bx, 2, bx, 6, '#F2E3C8']);
-    } else if (s.ev_k === 5 && ed < 700) {
-      draw.push(['line', 7, 1, 9, 1, '#35C24A']); draw.push(['line', 8, 0, 8, 2, '#35C24A']);
-    } else if (s.ev_k === 6 && ed < 700) {
-      draw.push(['line', 6, 1, 10, 5, '#E05540']); draw.push(['line', 10, 1, 6, 5, '#E05540']);
+    const cr = creature(s);
+    const ox = Math.floor((17 - cr.w) / 2), oy = 7 - cr.h;
+    for (let i = 0; i < s.pp; i++) cv.sprite(SPR.poop, 12 + i, 5 - i);
+    if (s.sl === 1) {
+      // asleep: one still pose, eyes shut, a "z" that bobs
+      cv.sprite(cr.pair.a, ox, oy, null, cr.skin);
+      const up = Math.floor(t / 900) % 2 === 0;
+      cv.cmd(['text', ox + cr.w + (up ? 1 : 2), up ? -1 : 0, 'z', '#5C7FBF']);
+    } else {
+      const pe = (active(1) && ed < 1500) ? 160 : 1200;      // chewing flips faster
+      const rows = Math.floor(t / pe) % 2 === 0 ? cr.pair.a : cr.pair.b;
+      const flash = (active(3) || active(4)) && Math.floor(ed / 140) % 2 === 0 ? '#FFE9C9' : null;
+      const blink = !flash && (t % 4000) < 150;
+      cv.sprite(rows, ox, oy, flash, blink ? cr.skin : null);
     }
+    if (s.sk === 1 && Math.floor(t / 350) % 2 === 0) { cv.pixel(0, 0, '#35C24A'); cv.pixel(0, 1, '#35C24A'); }
+    if (active(1) && ed < 900) cv.sprite(SPR.food, Math.max(0, Math.floor((17 - cr.w) / 2) - 5), 3);
+    else if (active(2)) { const bx = Math.floor(ed * 17 / 1200); cv.cmd(['line', bx, 2, bx, 6, '#F2E3C8']); }
+    else if (active(5) && Math.floor(ed / 150) % 2 === 0) { cv.cmd(['line', 7, 1, 9, 1, '#35C24A']); cv.cmd(['line', 8, 0, 8, 2, '#35C24A']); }
+    else if (active(6)) { cv.cmd(['line', 6, 1, 10, 5, '#E05540']); cv.cmd(['line', 10, 1, 6, 5, '#E05540']); }
   }
+  if (active(7)) cv.sprite(SPR.heart, 7, 0);
+  else if (active(8)) for (let i = 0; i < s.hits; i++) cv.sprite(SPR.heart, 3 + i * 5, 0);
 
-  // Bars pulse when critical (<2500) instead of sitting there lit - a
-  // silent-but-visible warning, same threshold/cadence as the original.
-  const barBlink = (Math.floor(Date.now() / 300) % 2) === 0;
+  // stat bars; a bar under 25% blinks
+  const blinkOn = Math.floor(t / 300) % 2 === 0;
   const bars = [s.h, s.ha, s.en, s.cl];
-  const bcol = ['#D97757', '#E8C33F', '#3FB4E8', '#4FC96F'];
   for (let i = 0; i < 4; i++) {
-    draw.push(['rectFill', 18, i * 2, 14, 1, '#202020']);
+    cv.cmd(['rectFill', 18, i * 2, 14, 1, '#202020']);
     let w = Math.floor(bars[i] * 14 / 10000);
     if (w < 1 && bars[i] > 0) w = 1;
-    if (w > 0 && (bars[i] >= 2500 || barBlink)) {
-      draw.push(['rectFill', 18, i * 2, w, 1, bcol[i]]);
-    }
+    if (w > 0 && (bars[i] >= 2500 || blinkOn)) cv.cmd(['rectFill', 18, i * 2, w, 1, BAR_COLORS[i]]);
   }
-  return { draw };
+  return withLifetime({ draw: cv.done() }, cfg);
 }
 
-function checkNotify(s) {
-  if (s.st !== 1 || s.sl === 1) return null;
-  const now = Date.now();
-  if (now - (s.lastNotify || 0) < 1800000) return null;
+// What a frame shows, minus animation. When it changes while Clawd is off
+// screen, the frame is refreshed right away instead of waiting.
+function signature(s, cfg, nowMs) {
+  const bars = [s.h, s.ha, s.en, s.cl].map((v) => Math.floor(v * 14 / 10000)).join(',');
+  return [s.st, s.ev, s.va, s.pp, s.sk, s.sl, s.ui, s.mi, s.rp, bars, isNight(s, cfg, nowMs) ? 1 : 0].join('|');
+}
+
+// While an effect plays (feeding, cleaning, hatching...), push extra frames so
+// it animates. Menus get no burst: a second press while an older burst is
+// still being sent would flicker between the old and the new label.
+function animatedUntil(s, nowMs) {
+  if (s.ui !== 0 || !(s.ev_k > 0)) return 0;
+  const until = s.ev_t0 + FX_MS[s.ev_k];
+  return until > nowMs ? until : 0;
+}
+
+// ---- view mode ----------------------------------------------------------------
+// The state the device script needs, as one short CSV line (cheap to parse in
+// Berry). Field order is part of the protocol; see awtrix/README.md.
+function stateLine(s, cfg, nowMs) {
+  const night = isNight(s, cfg, nowMs) ? 1 : 0;
+  return [
+    2,                                   // protocol version
+    s.st, s.ev, s.va,
+    Math.round(s.h), Math.round(s.ha), Math.round(s.en), Math.round(s.cl), Math.round(s.hp),
+    s.pp, s.sk, s.sl, night,
+    s.gen, s.cs, Math.floor(s.age),
+    s.ev_k, s.fx % 100000, s.hits,
+    Math.floor(nowMs / 1000),
+    Math.floor(s.warm),
+    Math.floor(cfg.EGG_HATCH_MIN * 60)
+  ].join(',');
+}
+
+function parseCmd(raw) {
+  let o = raw;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (t.startsWith('{')) { try { o = JSON.parse(t); } catch (e) { return null; } }
+    else o = { a: t };
+  }
+  if (!o || typeof o !== 'object') return null;
+  const name = String(o.a || o.action || '').toLowerCase();
+  if (!(name in ACTIONS)) return null;
+  const out = { id: ACTIONS[name] };
+  if (o.hits !== undefined) {
+    const h = parseInt(o.hits, 10);
+    if (Number.isInteger(h) && h >= 0 && h <= 3) out.hits = h;
+  }
+  return out;
+}
+
+// ---- notifications ------------------------------------------------------------
+function checkNotify(s, cfg, nowMs) {
+  if (!cfg.NOTIFY || s.st !== 1 || s.sl === 1) return null;
+  if (nowMs - (s.lastNotify || 0) < 1800000) return null;
   if (s.h < 1500 || s.ha < 1500 || s.cl < 1500 || s.sk === 1) {
-    s.lastNotify = now;
-    return { text: `${PET_NAME} needs you!`, textColor: '#D97757' };
+    s.lastNotify = nowMs;
+    const n = { text: `${cfg.PET_NAME} needs you!`, textColor: '#D97757' };
+    if (cfg.SOUND) n.soundRtttl = SND_SICK;
+    return n;
   }
   return null;
 }
 
-// ---- entry point ---------------------------------------------------------
-// input: { event: 'tick' } | { event: 'button', btn: 'select'|'left'|'right' }
-// staticData: n8n's persistent workflow static data object
-function run(input, staticData) {
-  if (!staticData.clawd) staticData.clawd = freshState(1);
-  const s = staticData.clawd;
+// ---- entry point -----------------------------------------------------------------
+// input:  { event: 'tick' }
+//         { event: 'button', btn: 'left'|'select'|'right', prefix }  (press edge only)
+//         { event: 'active', app, prefix }                           (<prefix>/state/apps/active)
+//         { event: 'action', name }                                  (Home Assistant webhook)
+//         { event: 'cmd', payload }                                  (view mode, from the device)
+// store:  a persistent object (n8n workflow static data)
+// Returns what the workflow should do; see README "How the workflow uses the result".
+function run(input, store, rawCfg, nowMs) {
+  const cfg = rawCfg && rawCfg.STEP_SEC ? rawCfg : makeConfig(rawCfg);
+  nowMs = nowMs || Date.now();
+  input = input || { event: 'tick' };
 
-  const prevEvK = s.ev_k;
-  const prevSt = s.st;
-  const prevEv = s.ev;
-  const prevSk = s.sk;
+  if (!store.clawd) store.clawd = freshState(1, nowMs);
+  const s = upgradeState(store.clawd, nowMs);
+  if (!store.dev) store.dev = { fg: null, lastPush: 0, sig: '', lastPub: 0, pubSig: '' };
+  const dev = store.dev;
 
-  advanceTime(s);
-  checkDwell(s);
-  if (input.event === 'button') onButton(s, input.btn);
-  else if (input.event === 'action') action(s, input.id);
+  const out = {
+    mode: cfg.MODE, ignore: false, push: false, payload: null, frames: [],
+    sound: null, notify: null, switchTo: false, publish: null,
+    base: `http://${cfg.AWTRIX_HOST}`, app: cfg.APP_NAME, warnings: cfg.warnings
+  };
 
-  const payload = renderPayload(s);
-  const sound = (s.ev_k !== prevEvK && s.ev_k > 0) ? SND[s.ev_k] : null;
-  const notify = checkNotify(s);
+  // Messages meant for another device, or of no interest in this mode.
+  const ev = input.event;
+  if ((ev === 'button' || ev === 'active') && input.prefix !== undefined && input.prefix !== cfg.MQTT_PREFIX) {
+    out.ignore = true; return out;
+  }
+  if (cfg.MODE === 'view' && (ev === 'button' || ev === 'active')) { out.ignore = true; return out; }
+  if (cfg.MODE === 'push' && ev === 'cmd') { out.ignore = true; return out; }
 
-  // Force the panel onto Clawd for anything the user actually did, or for a
-  // state change worth interrupting the rotation for (died / evolved / fell
-  // ill) - but never for a plain background tick, or you'd hijack the screen
-  // every couple of seconds.
-  const diedNow = prevSt !== 2 && s.st === 2;
-  const evolvedNow = prevEv !== s.ev;
-  const gotSickNow = prevSk !== 1 && s.sk === 1;
-  const switchTo = input.event !== 'tick' || diedNow || evolvedNow || gotSickNow;
+  const prev = { st: s.st, ev: s.ev, sk: s.sk, fx: s.fx };
+  const before = significant(s, dev);
+  let userAct = false;
 
-  return { payload, sound, notify, switchTo };
+  advanceTime(s, cfg, nowMs);
+  if (cfg.MODE === 'push') checkDwell(s, cfg, nowMs);
+
+  if (ev === 'active') {
+    const wasFg = dev.fg;
+    dev.fg = String(input.app || '') === cfg.APP_NAME;
+    if (!dev.fg && s.ui !== 0) s.ui = 0;                  // Clawd left the screen: close menus
+    if (dev.fg && wasFg !== true) userAct = true;          // came on screen: send a fresh frame
+  } else if (ev === 'button') {
+    if (dev.fg !== true) { out.ignore = true; return out; } // only while Clawd is on screen
+    onButton(s, input.btn, cfg, nowMs);
+    userAct = true;
+  } else if (ev === 'action') {
+    const id = ACTIONS[String(input.name || '').toLowerCase()];
+    if (id === undefined) { out.ignore = true; return out; }
+    action(s, id, cfg, nowMs);
+    out.switchTo = true;                                  // HA buttons bring Clawd on screen
+    userAct = true;
+  } else if (ev === 'cmd') {
+    const c = parseCmd(input.payload);
+    if (!c) { out.ignore = true; return out; }
+    action(s, c.id, cfg, nowMs, c);
+    userAct = true;
+  }
+
+  const diedNow = prev.st !== 2 && s.st === 2;
+  const evolvedNow = prev.ev !== s.ev;
+  const gotSickNow = prev.sk !== 1 && s.sk === 1;
+  if (cfg.SWITCH_ON_EVENTS && (diedNow || evolvedNow || gotSickNow)) out.switchTo = true;
+
+  if (cfg.SOUND && cfg.MODE === 'push') {
+    if (s.fx !== prev.fx && SND[s.ev_k]) out.sound = SND[s.ev_k];
+    else if (gotSickNow) out.sound = SND_SICK;
+  }
+  out.notify = checkNotify(s, cfg, nowMs);
+
+  if (cfg.MODE === 'push') {
+    const sig = signature(s, cfg, nowMs);
+    const onScreen = dev.fg !== false;                     // unknown counts as on screen
+    out.push = userAct || out.switchTo || onScreen || sig !== dev.sig || s.fx !== prev.fx ||
+      nowMs - (dev.lastPush || 0) >= cfg.OFFSCREEN_REFRESH_SEC * 1000;
+    if (out.push) {
+      out.payload = render(s, cfg, nowMs);
+      dev.lastPush = nowMs; dev.sig = sig;
+      // Extra frames every 250 ms while something animates, sent only right
+      // after an event (not on plain ticks) and only while Clawd is shown.
+      const until = animatedUntil(s, nowMs);
+      if (cfg.BURST && until && (onScreen || out.switchTo) && (userAct || s.fx !== prev.fx)) {
+        // n8n sends the first one at once and the rest 250 ms apart, so frame k
+        // goes out ~100 ms + k x 250 ms from now.
+        for (let t = nowMs + 100; t <= Math.min(until, nowMs + 3000); t += 250) out.frames.push(render(s, cfg, t));
+      }
+    }
+  } else {
+    // view mode: publish when anything the device shows changed, and at
+    // least once a minute so a restarted device gets fresh data quickly.
+    const line = stateLine(s, cfg, nowMs);
+    const f = line.split(',');
+    const psig = f.slice(0, 15).concat(f.slice(16, 19), f.slice(20)).join(',');  // all but age and clock
+    if (psig !== dev.pubSig || nowMs - (dev.lastPub || 0) >= 60000 || userAct) {
+      out.publish = { topic: cfg.STATE_TOPIC, message: line, retain: true };
+      dev.pubSig = psig; dev.lastPub = nowMs;
+    }
+  }
+
+  // Should this run's state be saved? Every event and every visible change
+  // is; a plain tick that only moved the clock forward is not, at most once a
+  // minute. See runN8n() for why that matters.
+  out.commit = ev !== 'tick' || significant(s, dev) !== before || nowMs - (s.saved || 0) >= 60000;
+  if (out.commit) s.saved = nowMs;
+  return out;
 }
 
-module.exports = { run, freshState };
+// Everything in the state except the counters that only move with the clock.
+function significant(s, dev) {
+  const o = Object.assign({}, s);
+  delete o.last_ts; delete o.decAcc; delete o.age; delete o.pt; delete o.saved;
+  return JSON.stringify(o) + '|' + dev.fg + '|' + dev.sig + '|' + dev.pubSig + '|' +
+    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub;
+}
+
+// The n8n entry point. n8n loads the workflow's static data when a run starts
+// and writes all of it back when the run ends, so two runs that overlap (a
+// tick and a button press) can undo each other's changes. Two things keep
+// that window small: the engine works on a copy and only writes it back when
+// run() says so (most ticks change nothing worth saving), and the workflow
+// hands every HTTP call to a separate background run, so a run that owns the
+// state lasts a few milliseconds.
+function runN8n(input, staticData, rawCfg, nowMs) {
+  const work = {
+    clawd: staticData.clawd ? JSON.parse(JSON.stringify(staticData.clawd)) : undefined,
+    dev: staticData.dev ? JSON.parse(JSON.stringify(staticData.dev)) : undefined
+  };
+  const r = run(input, work, rawCfg, nowMs);
+  if (r.commit) { staticData.clawd = work.clawd; staticData.dev = work.dev; }
+  return r;
+}
+
+const ClawdEngine = {
+  ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND,
+  makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
+  checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
+  stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = ClawdEngine;

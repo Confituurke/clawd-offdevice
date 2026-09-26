@@ -1,9 +1,9 @@
 {
-  "name": "Clawd (push mode)",
+  "name": "Clawd (view mode)",
   "nodes": [
     {
       "id": "clawd-trg-02",
-      "name": "Tick every 2s",
+      "name": "Tick every 15s",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -15,7 +15,7 @@
           "interval": [
             {
               "field": "seconds",
-              "secondsInterval": 2
+              "secondsInterval": 15
             }
           ]
         }
@@ -36,7 +36,7 @@
     },
     {
       "id": "clawd-trg-01",
-      "name": "AWTRIX MQTT",
+      "name": "Device Commands (MQTT)",
       "type": "n8n-nodes-base.mqttTrigger",
       "typeVersion": 1,
       "position": [
@@ -49,15 +49,15 @@
           "name": "AWTRIX broker"
         }
       },
-      "notes": "Buttons and the app on screen. \"+\" stands for your MQTT prefix; if the prefix contains a \"/\", replace \"+\" with it.",
+      "notes": "Must match the \"Command topic\" setting of the Clawd script and CMD_TOPIC in Settings.",
       "parameters": {
-        "topics": "+/state/buttons/+,+/state/apps/active",
+        "topics": "clawd/cmd",
         "options": {}
       }
     },
     {
       "id": "clawd-code-04",
-      "name": "MQTT Event",
+      "name": "Command Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -65,7 +65,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "// AWTRIX NG publishes \"1\" on press and \"0\" on release (retained), and the\n// name of the app on screen as a plain string. Only presses and app changes\n// matter; the engine checks the prefix against the Settings node.\nconst out = [];\nfor (const item of $input.all()) {\n  const topic = String(item.json.topic || '');\n  const msg = String(item.json.message ?? '').trim();\n  const at = topic.lastIndexOf('/state/');\n  if (at < 0) continue;\n  const prefix = topic.slice(0, at);\n  const rest = topic.slice(at + 7).split('/');\n  if (rest[0] === 'buttons' && rest.length === 2) {\n    if (['1', 'true', 'on'].includes(msg.toLowerCase())) out.push({ json: { event: 'button', btn: rest[1], prefix } });\n  } else if (rest[0] === 'apps' && rest[1] === 'active') {\n    out.push({ json: { event: 'active', app: msg.replace(/^\"|\"$/g, ''), prefix } });\n  }\n}\nreturn out;"
+        "jsCode": "// The on-device view script publishes {\"a\":\"feed\"} etc. on the command topic.\nreturn $input.all().map((item) => ({ json: { event: 'cmd', payload: String(item.json.message ?? '') } }));"
       }
     },
     {
@@ -115,7 +115,7 @@
             {
               "id": "clawd-opt-08",
               "name": "cfg.MODE",
-              "value": "push",
+              "value": "view",
               "type": "string"
             },
             {
@@ -222,21 +222,15 @@
             },
             {
               "id": "clawd-opt-26",
-              "name": "cfg.BURST",
-              "value": true,
-              "type": "boolean"
+              "name": "cfg.STATE_TOPIC",
+              "value": "clawd/state",
+              "type": "string"
             },
             {
               "id": "clawd-opt-27",
-              "name": "cfg.OFFSCREEN_REFRESH_SEC",
-              "value": 30,
-              "type": "number"
-            },
-            {
-              "id": "clawd-opt-28",
-              "name": "cfg.STALE_AFTER_SEC",
-              "value": 90,
-              "type": "number"
+              "name": "cfg.CMD_TOPIC",
+              "value": "clawd/cmd",
+              "type": "string"
             }
           ]
         },
@@ -245,7 +239,7 @@
       }
     },
     {
-      "id": "clawd-code-29",
+      "id": "clawd-code-28",
       "name": "Clawd Engine",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -259,13 +253,13 @@
       "notes": "Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js."
     },
     {
-      "id": "clawd-if-30",
-      "name": "Anything To Send",
+      "id": "clawd-if-29",
+      "name": "Has State",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
         280,
-        200
+        100
       ],
       "parameters": {
         "conditions": {
@@ -277,8 +271,8 @@
           },
           "conditions": [
             {
-              "id": "clawd-cond-31",
-              "leftValue": "={{ $json.push || $json.switchTo || !!$json.sound || !!$json.notify }}",
+              "id": "clawd-cond-30",
+              "leftValue": "={{ !!$json.publish }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -293,18 +287,78 @@
       }
     },
     {
-      "id": "clawd-exec-49",
+      "id": "clawd-mqtt-31",
+      "name": "Publish State",
+      "type": "n8n-nodes-base.mqtt",
+      "typeVersion": 1,
+      "position": [
+        500,
+        100
+      ],
+      "credentials": {
+        "mqtt": {
+          "id": "REPLACE_WITH_YOUR_MQTT_CREDENTIAL_ID",
+          "name": "AWTRIX broker"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "topic": "={{ $json.publish.topic }}",
+        "sendInputData": false,
+        "message": "={{ $json.publish.message }}",
+        "options": {
+          "retain": true,
+          "qos": 1
+        }
+      }
+    },
+    {
+      "id": "clawd-if-32",
+      "name": "Anything To Send",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "clawd-cond-33",
+              "leftValue": "={{ $json.switchTo || !!$json.notify }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "clawd-exec-41",
       "name": "Send To AWTRIX",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
         500,
-        200
+        300
       ],
       "notes": "Runs the HTTP calls to AWTRIX in the background. The sub-workflow is defined inline (Workflow JSON).",
       "parameters": {
         "source": "parameter",
-        "workflowJson": "{\n \"name\": \"Clawd: send to AWTRIX\",\n \"nodes\": [\n  {\n   \"id\": \"clawd-trg-32\",\n   \"name\": \"From Clawd Engine\",\n   \"type\": \"n8n-nodes-base.executeWorkflowTrigger\",\n   \"typeVersion\": 1.1,\n   \"position\": [\n    0,\n    300\n   ],\n   \"parameters\": {\n    \"inputSource\": \"passthrough\"\n   }\n  },\n  {\n   \"id\": \"clawd-if-34\",\n   \"name\": \"Has Frame\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    0\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-35\",\n       \"leftValue\": \"={{ $json.push === true }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-http-33\",\n   \"name\": \"Push Frame\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    440,\n    0\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"PUT\",\n    \"url\": \"={{ $json.base }}/api/v1/apps/pushed/{{ $json.app }}\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify($json.payload) }}\",\n    \"options\": {\n     \"timeout\": 2000\n    }\n   }\n  },\n  {\n   \"id\": \"clawd-if-37\",\n   \"name\": \"Has SwitchTo\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    160\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-38\",\n       \"leftValue\": \"={{ $json.switchTo === true }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-http-36\",\n   \"name\": \"Switch To Clawd\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    440,\n    160\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"PUT\",\n    \"url\": \"={{ $json.base }}/api/v1/apps/active\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify({ name: $json.app, fast: true }) }}\",\n    \"options\": {\n     \"timeout\": 2000\n    }\n   }\n  },\n  {\n   \"id\": \"clawd-if-40\",\n   \"name\": \"Has Sound\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    320\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-41\",\n       \"leftValue\": \"={{ !!$json.sound }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-http-39\",\n   \"name\": \"Play Sound\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    440,\n    320\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"POST\",\n    \"url\": \"={{ $json.base }}/api/v1/audio/play\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify({ rtttl: $json.sound }) }}\",\n    \"options\": {\n     \"timeout\": 2000\n    }\n   }\n  },\n  {\n   \"id\": \"clawd-if-43\",\n   \"name\": \"Has Notify\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    480\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-44\",\n       \"leftValue\": \"={{ !!$json.notify }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-http-42\",\n   \"name\": \"Send Notify\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    440,\n    480\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"POST\",\n    \"url\": \"={{ $json.base }}/api/v1/notifications\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify($json.notify) }}\",\n    \"options\": {\n     \"timeout\": 2000\n    }\n   }\n  },\n  {\n   \"id\": \"clawd-if-45\",\n   \"name\": \"Has Burst\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    640\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-46\",\n       \"leftValue\": \"={{ ($json.frames || []).length > 0 }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-code-47\",\n   \"name\": \"Split Frames\",\n   \"type\": \"n8n-nodes-base.code\",\n   \"typeVersion\": 2,\n   \"position\": [\n    440,\n    640\n   ],\n   \"parameters\": {\n    \"jsCode\": \"// One item per extra frame; the next node sends them 250 ms apart.\\nconst out = [];\\nfor (const item of $input.all()) {\\n  for (const payload of item.json.frames || []) out.push({ json: { base: item.json.base, app: item.json.app, payload } });\\n}\\nreturn out;\"\n   }\n  },\n  {\n   \"id\": \"clawd-http-48\",\n   \"name\": \"Push Burst Frame\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    660,\n    640\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"PUT\",\n    \"url\": \"={{ $json.base }}/api/v1/apps/pushed/{{ $json.app }}\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify($json.payload) }}\",\n    \"options\": {\n     \"timeout\": 2000,\n     \"batching\": {\n      \"batch\": {\n       \"batchSize\": 1,\n       \"batchInterval\": 250\n      }\n     }\n    }\n   }\n  }\n ],\n \"connections\": {\n  \"From Clawd Engine\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Has Frame\",\n      \"type\": \"main\",\n      \"index\": 0\n     },\n     {\n      \"node\": \"Has SwitchTo\",\n      \"type\": \"main\",\n      \"index\": 0\n     },\n     {\n      \"node\": \"Has Sound\",\n      \"type\": \"main\",\n      \"index\": 0\n     },\n     {\n      \"node\": \"Has Notify\",\n      \"type\": \"main\",\n      \"index\": 0\n     },\n     {\n      \"node\": \"Has Burst\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has Frame\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Push Frame\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has SwitchTo\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Switch To Clawd\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has Sound\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Play Sound\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has Notify\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Send Notify\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has Burst\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Split Frames\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Split Frames\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Push Burst Frame\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  }\n },\n \"settings\": {\n  \"executionOrder\": \"v1\",\n  \"saveDataSuccessExecution\": \"none\"\n }\n}",
+        "workflowJson": "{\n \"name\": \"Clawd: send to AWTRIX\",\n \"nodes\": [\n  {\n   \"id\": \"clawd-trg-34\",\n   \"name\": \"From Clawd Engine\",\n   \"type\": \"n8n-nodes-base.executeWorkflowTrigger\",\n   \"typeVersion\": 1.1,\n   \"position\": [\n    0,\n    300\n   ],\n   \"parameters\": {\n    \"inputSource\": \"passthrough\"\n   }\n  },\n  {\n   \"id\": \"clawd-if-36\",\n   \"name\": \"Has SwitchTo\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    0\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-37\",\n       \"leftValue\": \"={{ $json.switchTo === true }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-http-35\",\n   \"name\": \"Switch To Clawd\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    440,\n    0\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"PUT\",\n    \"url\": \"={{ $json.base }}/api/v1/apps/active\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify({ name: $json.app, fast: true }) }}\",\n    \"options\": {\n     \"timeout\": 2000\n    }\n   }\n  },\n  {\n   \"id\": \"clawd-if-39\",\n   \"name\": \"Has Notify\",\n   \"type\": \"n8n-nodes-base.if\",\n   \"typeVersion\": 2.2,\n   \"position\": [\n    220,\n    160\n   ],\n   \"parameters\": {\n    \"conditions\": {\n     \"options\": {\n      \"caseSensitive\": true,\n      \"leftValue\": \"\",\n      \"typeValidation\": \"loose\",\n      \"version\": 2\n     },\n     \"conditions\": [\n      {\n       \"id\": \"clawd-cond-40\",\n       \"leftValue\": \"={{ !!$json.notify }}\",\n       \"rightValue\": \"\",\n       \"operator\": {\n        \"type\": \"boolean\",\n        \"operation\": \"true\",\n        \"singleValue\": true\n       }\n      }\n     ],\n     \"combinator\": \"and\"\n    },\n    \"options\": {}\n   }\n  },\n  {\n   \"id\": \"clawd-http-38\",\n   \"name\": \"Send Notify\",\n   \"type\": \"n8n-nodes-base.httpRequest\",\n   \"typeVersion\": 4.2,\n   \"position\": [\n    440,\n    160\n   ],\n   \"onError\": \"continueRegularOutput\",\n   \"parameters\": {\n    \"method\": \"POST\",\n    \"url\": \"={{ $json.base }}/api/v1/notifications\",\n    \"sendBody\": true,\n    \"specifyBody\": \"json\",\n    \"jsonBody\": \"={{ JSON.stringify($json.notify) }}\",\n    \"options\": {\n     \"timeout\": 2000\n    }\n   }\n  }\n ],\n \"connections\": {\n  \"From Clawd Engine\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Has SwitchTo\",\n      \"type\": \"main\",\n      \"index\": 0\n     },\n     {\n      \"node\": \"Has Notify\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has SwitchTo\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Switch To Clawd\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  },\n  \"Has Notify\": {\n   \"main\": [\n    [\n     {\n      \"node\": \"Send Notify\",\n      \"type\": \"main\",\n      \"index\": 0\n     }\n    ]\n   ]\n  }\n },\n \"settings\": {\n  \"executionOrder\": \"v1\",\n  \"saveDataSuccessExecution\": \"none\"\n }\n}",
         "mode": "once",
         "options": {
           "waitForSubWorkflow": false
@@ -313,7 +367,7 @@
     }
   ],
   "connections": {
-    "Tick every 2s": {
+    "Tick every 15s": {
       "main": [
         [
           {
@@ -324,11 +378,11 @@
         ]
       ]
     },
-    "AWTRIX MQTT": {
+    "Device Commands (MQTT)": {
       "main": [
         [
           {
-            "node": "MQTT Event",
+            "node": "Command Event",
             "type": "main",
             "index": 0
           }
@@ -357,7 +411,7 @@
         ]
       ]
     },
-    "MQTT Event": {
+    "Command Event": {
       "main": [
         [
           {
@@ -394,7 +448,23 @@
       "main": [
         [
           {
+            "node": "Has State",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Anything To Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has State": {
+      "main": [
+        [
+          {
+            "node": "Publish State",
             "type": "main",
             "index": 0
           }

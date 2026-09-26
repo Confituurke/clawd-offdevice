@@ -1,0 +1,512 @@
+# @name    Clawd
+# @desc    Clawd the pixel crab (view; rules in n8n or clawdcore)
+# @author  Blueforcer (original Clawd), clawd-offdevice
+# @version 2.0
+# @config  brain  select "Brain"         default=n8n options=n8n,device help="device needs the clawdcore module"
+# @config  name   text   "Pet name"      default=Clawd maxlen=12
+# @config  sound  bool   "Sound"         default=false
+# @config  stopic text   "State topic"   default="clawd/state" maxlen=64
+# @config  ctopic text   "Command topic" default="clawd/cmd" maxlen=64
+import string
+
+# Install this script under the name "clawd" (the name n8n switches to).
+# Sprites, colours and animations are Blueforcer's originals. The state arrives
+# as one CSV line; the field order is documented in awtrix/README.md.
+
+class Clawd
+  var s, V, A, B, W, H, X, Y, sg, ey  # state list, palette, current sprite frames, size, skin colour
+  var u, m, w, r, fk, fe, lf, sk      # ui mode, menu item, dwell start, confirm step, effect, last fx, sick
+  var rx, core, snd, ct, nm           # last state time, core module, settings
+  var M, N, F, R, P, L, S, T, K, J    # glyphs, food, heart, poop, labels, stars, fx ms, bar colours, tunes
+  var ga, gh, gp, gt, C, D, b, c      # star catch round/hits/phase/time + sprites, stats text/runs
+
+  def init()
+    self.nm = store.get("name")
+    self.snd = store.get("sound")
+    self.ct = store.get("ctopic")
+    self.V = [0xD97757,0xE58963,0xA8553C,0xA94F38,0xF0906B,0xC4694D,0xFFFFFF,0xE05540,0xF2E3C8,0xC96F4A,0xFFD34D,0x8B5A2B,0x93A7C4,0x9AA0A6]
+    self.P = self._d(".m.|mmm")
+    self.F = self._d(".yy.|mmmm|.ee.")
+    self.R = self._d("r.r|rrr|.r.")
+    self.S = [3,0,8,1,13,0,1,2,15,2]
+    self.K = [0xD97757,0xE8C33F,0x3FB4E8,0x4FC96F]
+    self.L = ["EXIT","FEED","PLAY","CLEAN","MED","SLEEP","STATS"]
+    self.T = [0,1500,1200,2200,2200,900,700,600,1500,1500]
+    self.J = ["","m:d=16,o=5,b=200:g,p,g,p,g","c:d=32,o=6,b=220:e,g","e:d=16,o=5,b=140:c,e,g,8c6,16p,8e6","h:d=16,o=6,b=180:c,e,g,c7","c:d=32,o=6,b=220:e,g","x:d=16,o=4,b=200:c","c:d=32,o=6,b=220:e,g","w:d=16,o=6,b=180:c,e,g,8c7","d:d=4,o=4,b=70:8e,8d,c"]
+    self.u = 0
+    self.fk = 0
+    self.fe = 0
+    self.sk = 0
+    self.sg = -1
+    self.rx = 0
+  end
+
+  def setup()
+    if store.get("brain") == "device"
+      try
+        import clawdcore
+        self.core = clawdcore
+        clawdcore.start(self.nm)
+        self._r()
+      except .. as e, v
+        log("Clawd: brain=device needs the clawdcore module: " + str(v))
+      end
+      # Home Assistant (or anything) can send {"a":"feed"} to the command topic
+      mqtt.subscribe(self.ct, / t, p -> self._h(p))
+    else
+      mqtt.subscribe(store.get("stopic"), / t, p -> self._p(p))
+    end
+  end
+
+  def loop()
+    if self.core != nil
+      self.core.tick()
+      self._r()
+    end
+  end
+
+  # ---- state ------------------------------------------------------------------
+  # n8n brain: parse the CSV state line.
+  def _p(msg)
+    var l = string.split(msg, ",")
+    if size(l) < 22 || l[0] != "2" return end
+    if self.s == nil self.s = [] end
+    var i = 0
+    while i < 22
+      var v = int(l[i])
+      if i < size(self.s) self.s[i] = v else self.s.push(v) end
+      i += 1
+    end
+    self.rx = now_ms()
+    self._u()
+  end
+
+  # device brain: take the core's state list, then react to what changed.
+  def _r()
+    self.s = self.core.view()
+    self.rx = now_ms()
+    self._u()
+  end
+
+  # device brain: a command from Home Assistant, "feed" or {"a":"feed"}.
+  def _h(p)
+    if self.core == nil || p == nil || size(p) > 40 return end
+    p = string.tolower(string.tr(p, " \t\r\n{}", ""))
+    var i = string.find(p, "\"a\":\"")
+    if i < 0 i = string.find(p, "\"action\":\"") if i >= 0 i += 5 end end
+    if i >= 0 p = p[i + 5 ..] end
+    var a = string.split(p, "\"")[0]
+    if string.find(",feed,play,clean,med,sleep,wake,warm,newegg,reset,stats,", "," + a + ",") < 0 return end
+    if a == "stats"
+      self._a(6)
+    else
+      self.core.act(a, nil)
+      self._r()
+    end
+    rotation.show()
+  end
+
+  # Re-decode sprites when the stage changes; start effects and sounds when a
+  # new effect arrives.
+  def _u()
+    var s = self.s
+    var g = s[1] * 100 + s[2] * 10 + s[3]
+    if g != self.sg
+      self.sg = g
+      self._s()
+    end
+    if self.lf == nil
+      self.lf = s[17]
+      self.sk = s[10]
+    elif s[17] != self.lf
+      self.lf = s[17]
+      if s[16] == 10              # n8n asks for the stats (Home Assistant "stats")
+        self._a(6)
+      elif s[16] > 0 && s[16] < 10
+        self.fk = s[16]
+        self.fe = now_ms()
+        if self.snd sound.rtttl(self.J[(self.fk == 8 && s[18] == 0) ? 6 : self.fk]) end
+        if self.core != nil && (self.fk == 3 || self.fk == 4 || self.fk == 9) rotation.show() end
+      end
+    end
+    if s[10] == 1 && self.sk == 0
+      if self.snd sound.rtttl("s:d=8,o=5,b=160:e,p,e") end
+      if self.core != nil rotation.show() end
+    end
+    self.sk = s[10]
+  end
+
+  # Send an action to the brain.
+  def _c(a, hits)
+    if self.core != nil
+      self.core.act(a, hits)
+      self._r()
+    else
+      mqtt.publish(self.ct, "{\"a\":\"" + a + "\"" + (hits != nil ? ",\"hits\":" + str(hits) : "") + "}")
+    end
+  end
+
+  # ---- sprites ----------------------------------------------------------------
+  # Decode a sprite string into packed ints (x << 7 | y << 4 | colour index).
+  def _d(a)
+    var mp = {"o":0,"O":1,"q":2,"d":3,"c":4,"x":5,"w":6,"r":7,"e":8,"s":9,"y":10,"m":11,"g":12,"t":13}
+    var o = []
+    var x = 0
+    var y = 0
+    var i = 0
+    while i < size(a)
+      var ch = a[i]
+      if ch == "|"
+        y += 1
+        x = 0
+      else
+        var k = mp.find(ch)
+        if k != nil o.push(x * 128 + y * 16 + k) end
+        if y == 0 self.X = x + 1 end
+        x += 1
+      end
+      i += 1
+    end
+    self.Y = y + 1
+    return o
+  end
+
+  # Draw a decoded sprite; oc overrides every colour, ey (eyes) only the white.
+  def _b(l, ox, oy, oc, ey)
+    var i = 0
+    var n = size(l)
+    while i < n
+      var v = l[i]
+      var k = v & 15
+      pixel(ox + (v >> 7), oy + ((v >> 4) & 7), oc != 0 ? oc : ((ey != 0 && k == 6) ? ey : self.V[k]))
+      i += 1
+    end
+  end
+
+  def _s()
+    var s = self.s
+    var a
+    var b
+    var e = s[2]
+    if s[1] == 2
+      self.A = self._d(".gggg.|gwggwg|gggggg|gggggg|g.g.g.")
+      self.B = self._d(".ttt.|ttttt|tt.tt|tt.tt|ttttt|ttttt")
+      return
+    end
+    if s[1] == 0
+      a = ".eee.|eeeee|esees|eeeee|eseee|.eee."
+    elif e == 1
+      a = "c...c|.ooo.|owowo|.d.d."
+      b = ".....|coooc|owowo|d...d"
+    elif e == 2
+      a = "c....c|.oooo.|owoowo|.oooo.|.d..d."
+      b = "......|cooooc|owoowo|.oooo.|d....d"
+    elif e == 3
+      a = "c.....c|c.ooo.c|.ooooo.|owooowo|.ooooo.|.d.d.d."
+      b = ".......|c.ooo.c|coooooc|owooowo|.ooooo.|d.d.d.d"
+    elif s[3] == 0
+      a = ".y.yy.y.|c.OOOO.c|.OOOOOO.|OOwOOwOO|.OOOOOO.|..OOOO..|.d.d.d.d"
+      b = "..y..y..|ccOOOOcc|.OOOOOO.|OOwOOwOO|.OOOOOO.|..OOOO..|d.d.d.d."
+    elif s[3] == 2
+      a = "xx....xx|x.qqqq.x|.qqqqqq.|qqrqqrqq|.qqqqqq.|..dddd..|.d.d.d.d"
+      b = "........|xxqqqqxx|.qqqqqq.|qqrqqrqq|.qqqqqq.|..dddd..|d.d.d.d."
+    else
+      a = "cc....cc|c.oooo.c|.oooooo.|oowoowoo|.oooooo.|..oooo..|.d.d.d.d"
+      b = "........|ccoooocc|.oooooo.|oowoowoo|.oooooo.|..oooo..|d.d.d.d."
+    end
+    self.ey = self.V[(e == 4 && s[3] == 0) ? 1 : ((e == 4 && s[3] == 2) ? 2 : 0)]
+    self.A = self._d(a)
+    self.W = self.X
+    self.H = self.Y
+    self.B = b == nil ? self.A : self._d(b)
+  end
+
+  def _g(i)
+    return self._d([".r....r.|..r..r..|...rr...|...rr...|..r..r..|.r....r.","........|..yyyy..|.yyyyyy.|.mmmmmm.|.rrrrrr.|.eeeeee.","...y....|..yyy...|yyyyyyy.|.yyyyy..|..y.y...|.y...y..","......ee|.....ee.|....ee..|.yee....|yyy.....|yy......","...rr...|...rr...|.rrrrrr.|.rrrrrr.|...rr...|...rr...","..eee...|.ee.....|.ee.....|.ee.....|.ee.....|..eee...","......w.|......w.|...w..w.|...w..w.|w..w..w.|w..w..w.",".y.y.y..|..yyy...|yyyyyyy.|..yyy...|.y.y.y.."][i])
+  end
+
+  # ---- buttons ----------------------------------------------------------------
+  def _x()
+    self.u = 0
+    rotation.resume()
+  end
+
+  def on_hide()
+    self._x()
+  end
+
+  def duration()
+    return 15000
+  end
+
+  # Take the select button while Clawd is on screen, so a quick double press
+  # scrolls the menu instead of blanking the display. Left/right close any menu
+  # and keep their usual job of changing apps.
+  def on_button_event(btn, ev)
+    if btn != "select"
+      if ev == "press" && self.u != 0 self._x() end
+      return false
+    end
+    if ev != "press" || self.s == nil return true end
+    var now = now_ms()
+    var s = self.s
+    if s[1] == 0
+      self._c("warm", nil)
+    elif s[1] == 2
+      if self.u == 5
+        if self.r == 0
+          self.r = 1
+          self.w = now
+          rotation.pause()
+        else
+          self._x()
+        end
+      else
+        self.u = 5
+        self.r = 0
+        self.w = now
+        rotation.pause()
+      end
+    elif self.u == 0
+      self.u = 1
+      self.m = 0
+      self.M = self._g(0)
+      self.N = nil
+      self.w = now
+      rotation.pause()
+    elif self.u == 1
+      self.m = (self.m + 1) % 7
+      self.M = self._g(self.m)
+      self.N = self.m == 5 ? self._g(7) : nil
+      self.w = now
+      rotation.pause()
+    elif self.u == 2
+      if self.gp == 0
+        var p = 1500 - self.ga * 250
+        var cy = (now - self.gt) % (2 * p)
+        var x = (cy < p ? cy * 28 / p : (2 * p - cy) * 28 / p) + 2
+        self.gp = (x >= 3 && x <= 8) ? 1 : 2
+        if self.gp == 1 self.gh += 1 end
+        if self.snd sound.rtttl(self.gp == 1 ? self.J[2] : self.J[6]) end
+        self.gt = now
+      end
+      rotation.pause()
+    elif self.u == 3
+      self._x()
+    end
+    return true
+  end
+
+  # Run the highlighted menu item.
+  def _a(i)
+    var s = self.s
+    self.u = 0
+    if i == 2
+      if s[11] == 1 || s[1] != 1 || s[6] < 1500
+        self.fk = 6
+        self.fe = now_ms()
+      else
+        if self.C == nil
+          self.C = self._d("c....c|.oooo.|owoowo|.oooo.|.d..d.")
+          self.D = self._d("......|cooooc|owoowo|.oooo.|d....d")
+        end
+        self.u = 2
+        self.ga = 1
+        self.gh = 0
+        self.gp = 0
+        self.gt = now_ms()
+      end
+    elif i == 6
+      var a = s[15]
+      self.b = self.nm + "  AGE " + str(a / 86400) + "d" + str(a % 86400 / 3600) + "h  GEN " + str(s[13]) + "  CARE " + str(s[14]) + "  HP " + str(s[8] / 100) + "%"
+      self.c = -1
+      self.u = 3
+    elif i == 5
+      self._c(s[11] == 1 ? "wake" : "sleep", nil)
+    elif i > 0
+      self._c(string.tolower(self.L[i]), nil)
+    end
+    if self.u == 0 rotation.resume() end
+  end
+
+  # ---- drawing ----------------------------------------------------------------
+  def draw()
+    clear()
+    var now = now_ms()
+    var s = self.s
+    if s == nil
+      text(2, 6, "CLAWD", 0x505050)
+      return
+    end
+    if self.u == 1
+      var wk = self.m == 5 && s[11] == 1
+      self._b(wk ? self.N : self.M, 0, 1, 0, 0)
+      text(11, 6, wk ? "WAKE" : self.L[self.m], 0xF0E6D8)
+      rect_fill(0, 7, 32, 1, 0x1A1A1A)
+      var fw = (now - self.w) * 32 / 2000
+      if fw > 32 fw = 32 end
+      if fw > 0 rect_fill(0, 7, fw, 1, 0xD97757) end
+      if now - self.w >= 2000 self._a(self.m) end
+      return
+    end
+    if self.u == 3
+      var c = scroll_text(self.b, 0xF0E6D8)
+      if self.c < 0
+        self.c = c
+      elif c > self.c
+        self._x()
+      end
+      return
+    end
+    if self.u == 5
+      rect_fill(0, 7, 32, 1, 0x1A1A1A)
+      var rx = (width() - text_ink_width("NEW EGG?")) / 2
+      text(rx, 6, "NEW EGG?", self.r == 0 ? 0x8A8178 : 0xF0E6D8)
+      if self.r == 0
+        if now - self.w >= 6000 self._x() end
+        return
+      end
+      var fw = (now - self.w) * 32 / 3000
+      if fw > 32 fw = 32 end
+      if fw > 0 rect_fill(0, 7, fw, 1, 0xD97757) end
+      if now - self.w >= 3000
+        self._x()
+        self._c("newegg", nil)
+      end
+      return
+    end
+    if self.u == 2
+      line(0, 7, 16, 7, 0x1E4D1E)
+      self._b((now / 300) % 2 == 0 ? self.C : self.D, 2, 2, 0, 0)
+      pixel(2, 0, 0xD97757)
+      pixel(2, 1, 0xD97757)
+      pixel(9, 0, 0xD97757)
+      pixel(9, 1, 0xD97757)
+      var i = 0
+      while i < 3
+        pixel(26 + i * 2, 0, i < self.gh ? 0xFFD34D : 0x505050)
+        i += 1
+      end
+      if self.gp == 0
+        var p = 1500 - self.ga * 250
+        var cy = (now - self.gt) % (2 * p)
+        pixel((cy < p ? cy * 28 / p : (2 * p - cy) * 28 / p) + 2, 1, 0xFFD34D)
+        if now - self.gt > 6000
+          self.gp = 2
+          self.gt = now
+        end
+      else
+        if self.gp == 1
+          self._b(self.R, 5, 1, 0, 0)
+        else
+          line(4, 0, 8, 2, 0xE05540)
+          line(8, 0, 4, 2, 0xE05540)
+        end
+        if now - self.gt > 600
+          self.ga += 1
+          self.gp = 0
+          self.gt = now
+          if self.ga > 3
+            self.u = 0
+            rotation.resume()
+            self._c("play", self.gh)
+          end
+        end
+      end
+      return
+    end
+
+    var ed = now - self.fe
+    if self.fk > 0 && ed >= self.T[self.fk] self.fk = 0 end
+    if s[1] == 2
+      line(0, 7, 16, 7, 0x1E2430)
+      self._b(self.B, 4, 1, 0, 0)
+      self._b(self.A, 11, (now / 800) % 2 == 0 ? 1 : 2, 0, 0)
+      return
+    end
+    var ni = s[12] == 1
+    line(0, 7, 16, 7, ni ? 0x14203A : 0x1E4D1E)
+    if ni
+      rect_fill(1, 0, 2, 2, 0x8C8655)
+      var i = 0
+      while i < 10
+        if ((now / 400 + i) % 5) != 0 pixel(self.S[i], self.S[i + 1], 0x383838) end
+        i += 2
+      end
+    else
+      rect_fill(1, 0, 2, 2, 0x9A8430)
+      var cx = (now / 900) % 46 - 6
+      if cx >= -2 && cx <= 14
+        pixel(cx, 1, 0x2A2A2A)
+        if cx <= 13 pixel(cx + 1, 1, 0x2A2A2A) end
+        if cx <= 12 pixel(cx + 2, 1, 0x2A2A2A) end
+      end
+    end
+    if s[1] == 0
+      self._b(self.A, (now / 700) % 2 == 0 ? 5 : 6, 1, 0, 0)
+      var pr = (s[15] + s[20]) * 17 / (s[21] > 0 ? s[21] : 1800)
+      if pr > 17 pr = 17 end
+      if pr > 0 rect_fill(0, 7, pr, 1, 0xD97757) end
+    else
+      var ox = (17 - self.W) / 2
+      var oy = 7 - self.H
+      var i = 0
+      while i < s[9]
+        self._b(self.P, 12 + i, 5 - i, 0, 0)
+        i += 1
+      end
+      if s[11] == 1
+        self._b(self.A, ox, oy, 0, self.ey)
+        text(ox + self.W + ((now / 900) % 2 == 0 ? 1 : 2), (now / 900) % 2 == 0 ? 4 : 5, "z", 0x5C7FBF)
+      else
+        var pe = (self.fk == 1 && ed < 1500) ? 160 : 1200
+        var fl = 0
+        if (self.fk == 3 || self.fk == 4) && (ed / 140) % 2 == 0 fl = 0xFFE9C9 end
+        self._b((now / pe) % 2 == 0 ? self.A : self.B, ox, oy, fl, (fl == 0 && now % 4000 < 150) ? self.ey : 0)
+      end
+      if s[10] == 1 && (now / 350) % 2 == 0
+        pixel(0, 0, 0x35C24A)
+        pixel(0, 1, 0x35C24A)
+      end
+      if self.fk == 1 && ed < 900
+        var fx = ox - 5
+        self._b(self.F, fx < 0 ? 0 : fx, 3, 0, 0)
+      elif self.fk == 2
+        var bx = ed * 17 / 1200
+        line(bx, 2, bx, 6, 0xF2E3C8)
+      elif self.fk == 5 && (ed / 150) % 2 == 0
+        line(7, 1, 9, 1, 0x35C24A)
+        line(8, 0, 8, 2, 0x35C24A)
+      elif self.fk == 6
+        line(6, 1, 10, 5, 0xE05540)
+        line(10, 1, 6, 5, 0xE05540)
+      end
+    end
+    if self.fk == 7 && ed < 600
+      self._b(self.R, 7, 0, 0, 0)
+    elif self.fk == 8
+      var i = 0
+      while i < s[18]
+        self._b(self.R, 3 + i * 5, 0, 0, 0)
+        i += 1
+      end
+    end
+    # no news from n8n for 10 minutes: say so instead of showing stale bars
+    if self.core == nil && now - self.rx > 600000
+      text(19, 6, "OFF", 0x803020)
+      return
+    end
+    var bl = (now / 300) % 2 == 0
+    var i = 0
+    while i < 4
+      var v = s[4 + i]
+      rect_fill(18, i * 2, 14, 1, 0x202020)
+      var w = v * 14 / 10000
+      if w < 1 && v > 0 w = 1 end
+      if w > 0 && (v >= 2500 || bl) rect_fill(18, i * 2, w, 1, self.K[i]) end
+      i += 1
+    end
+  end
+end
+
+return Clawd()

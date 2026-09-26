@@ -1,0 +1,271 @@
+# @module clawdcore
+# @desc Clawd's rules, for running the pet entirely on the clock (Brain = device in the Clawd app). No n8n needed.
+# @author Blueforcer (original Clawd), clawd-offdevice
+# @version 2.0
+# @config hunger number "Hours until hungry" default=18 min=1 max=240 unit=h help="Awake, full to empty. The original was about 4"
+# @config egg number "Egg hatches after" default=30 min=1 max=1440 unit=min
+# @config child number "Child at" default=12 min=0 max=8760 unit=h
+# @config teen number "Teen at" default=36 min=0 max=8760 unit=h
+# @config adult number "Adult at" default=72 min=0 max=8760 unit=h
+# @config sfrom number "Sleeps from" default=22 min=0 max=23 unit=h
+# @config sto number "Wakes at" default=8 min=0 max=23 unit=h
+# @config nfrom number "Night from" default=20 min=0 max=23 unit=h
+# @config nto number "Night until" default=6 min=0 max=23 unit=h
+# @config notif bool "Notifications" default=false
+import math
+var m = module("clawdcore")
+m.st = int(store.get("hunger") * 2520)
+m.eg = int(store.get("egg") * 60)
+m.ag = [int(store.get("child") * 3600), int(store.get("teen") * 3600), int(store.get("adult") * 3600)]
+m.hr = [int(store.get("sfrom")), int(store.get("sto")), int(store.get("nfrom")), int(store.get("nto"))]
+m.nf = store.get("notif")
+m.o = [2,0,0,1,10000,10000,10000,10000,10000,0,0,0,0,1,0,0,0,0,1,0,0,0]
+m.fresh = def (g)
+return {"s":0,"v":0,"u":1,"h":10000,"a":10000,"e":10000,"c":10000,"x":10000,"l":0,"o":0,"k":0,"g":0,"w":0,"z":0,"n":g,"p":0,"t":0,"y":0,"f":0,"m":0,"q":0,"i":1,"b":-1,"fk":0}
+end
+m.win = def (h, a, b)
+if a == b return false end
+return a < b ? (h >= a && h < b) : (h >= a || h < b)
+end
+m.fx = def (k)
+m.t["fk"] = k
+m.t["q"] += 1
+end
+m.save = def ()
+var ep = epoch_ms()
+if ep > 0 m.t["y"] = ep / 1000 end
+store.set("clawd", m.t)
+end
+m.evolve = def (n)
+var t = m.t
+t["v"] = n
+if n == 1
+t["s"] = 1
+m.fx(4)
+else
+if n == 4 t["u"] = t["z"] >= 200 ? 0 : (t["z"] <= -100 ? 2 : 1) end
+m.fx(3)
+end
+m.save()
+end
+m.start = def (name)
+m.name = name
+m.t = m.fresh(1)
+var l = store.get("clawd")
+if l == nil l = store.get("s") end
+if isinstance(l, map)
+for k : m.t.keys()
+var v = l.find(k)
+if v != nil m.t[k] = v end
+end
+end
+m.sv = 60
+m.acc = 0
+m.cu = false
+end
+m.tick = def ()
+var t = m.t
+var ep = epoch_ms()
+if !m.cu && ep > 0
+m.cu = true
+if t["y"] > 0
+var el = ep / 1000 - t["y"]
+if el > 60
+if el > 43200 el = 43200 end
+t["g"] += el
+if t["s"] == 1
+var k = el * 300.0 / m.st
+t["h"] = clamp(t["h"] - int(7 * k), 0, 10000)
+t["a"] = clamp(t["a"] - int(5 * k), 0, 10000)
+t["e"] = clamp(t["e"] + int(2.5 * k), 0, 10000)
+t["c"] = clamp(t["c"] - int(2 * k), 0, 10000)
+if t["t"] > 0
+t["t"] -= el * 3 / 10
+if t["t"] <= 0
+t["t"] = 0
+t["p"] = min(t["p"] + 1, 3)
+t["c"] = clamp(t["c"] - 1500, 0, 10000)
+end
+end
+end
+end
+end
+end
+if t["s"] == 0
+t["g"] += 1
+if t["g"] + t["w"] >= m.eg m.evolve(1) end
+elif t["s"] == 1
+t["g"] += 1
+var h = hour()
+if h >= 0
+var au = m.win(h, m.hr[0], m.hr[1])
+if t["b"] < 0
+t["b"] = au ? 1 : 0
+elif (au ? 1 : 0) != t["b"]
+t["b"] = au ? 1 : 0
+t["o"] = 0
+end
+if t["o"] == 0 t["l"] = au ? 1 : 0 end
+end
+var sl = t["l"] == 1
+if t["t"] > 0 && !sl
+t["t"] -= 1
+if t["t"] <= 0
+t["t"] = 0
+t["p"] = min(t["p"] + 1, 3)
+t["c"] = clamp(t["c"] - 1500, 0, 10000)
+end
+end
+m.acc += 1000
+if m.acc >= m.st
+m.acc -= m.st
+var xt = (t["p"] >= 2 || t["k"] == 1) ? 5 : 0
+t["h"] = clamp(t["h"] - (sl ? 3 : 7), 0, 10000)
+t["a"] = clamp(t["a"] - (sl ? 0 : 5) - xt, 0, 10000)
+t["e"] = clamp(t["e"] + (sl ? 12 : -4), 0, 10000)
+t["c"] = clamp(t["c"] - 2 - 4 * t["p"], 0, 10000)
+var cf = t["f"]
+var vl = [t["h"], t["a"], t["e"], t["c"]]
+var i = 0
+while i < 4
+var b = 1 << i
+if vl[i] == 0
+if (cf & b) == 0
+t["z"] -= 25
+cf ^= b
+end
+elif vl[i] > 3000 && (cf & b) != 0
+cf ^= b
+end
+i += 1
+end
+t["f"] = cf
+if t["k"] == 0 && !sl
+if (t["h"] < 2000 || t["a"] < 2000 || t["c"] < 2000 || t["p"] >= 2) && math.rand() % 100 < 2
+t["k"] = 1
+t["z"] -= 25
+end
+end
+var dm = 0
+if t["h"] == 0 dm += 12 end
+if t["c"] == 0 dm += 6 end
+if t["k"] == 1 dm += 8 end
+t["x"] = clamp(t["x"] + (dm > 0 ? -dm : 5), 0, 10000)
+if t["x"] <= 0
+t["s"] = 2
+m.fx(9)
+m.save()
+end
+if m.nf && t["s"] == 1 && !sl && ep > 0 && ep / 1000 - t["m"] > 1800
+if t["h"] < 1500 || t["a"] < 1500 || t["c"] < 1500 || t["k"] == 1
+t["m"] = ep / 1000
+notify({"text": m.name + " needs you!", "textColor": 0xD97757})
+end
+end
+end
+var ag = t["g"]
+var e = t["v"]
+if e == 1 && ag >= m.ag[0] m.evolve(2)
+elif e == 2 && ag >= m.ag[1] m.evolve(3)
+elif e == 3 && ag >= m.ag[2] m.evolve(4)
+end
+end
+m.sv -= 1
+if m.sv <= 0
+m.sv = 60
+if t["s"] != 2 m.save() end
+end
+end
+m.act = def (a, hits)
+var t = m.t
+var s = t["s"]
+if a == "feed"
+if t["l"] == 1 || s != 1
+m.fx(6)
+else
+if t["h"] > 9000
+t["a"] = clamp(t["a"] - 500, 0, 10000)
+elif t["h"] < 7000
+t["z"] += 10
+end
+t["h"] = clamp(t["h"] + 4000, 0, 10000)
+t["t"] = int((2700 + math.rand() % 2700) * m.st / 10000)
+m.fx(1)
+end
+elif a == "play"
+if t["l"] == 1 || s != 1 || t["e"] < 1500
+m.fx(6)
+else
+var h = hits == nil ? 1 : clamp(int(hits), 0, 3)
+t["a"] = clamp(t["a"] + (hits == nil ? 1500 : 1000 * h + (h == 3 ? 500 : 0)), 0, 10000)
+t["e"] = clamp(t["e"] - 800, 0, 10000)
+if hits == nil t["z"] += 5 elif h >= 2 t["z"] += 10 end
+t["i"] = h
+m.fx(8)
+end
+elif a == "clean"
+if t["l"] == 1 || s != 1
+m.fx(6)
+else
+if t["p"] > 0 t["z"] += 10 end
+t["p"] = 0
+t["c"] = 10000
+m.fx(2)
+end
+elif a == "med"
+if t["k"] == 1 && s == 1
+t["k"] = 0
+t["z"] += 10
+t["a"] = clamp(t["a"] - 500, 0, 10000)
+m.fx(5)
+else
+m.fx(6)
+end
+elif a == "sleep" && s == 1
+if t["l"] == 1
+t["o"] = 1
+t["l"] = 0
+else
+t["o"] = 2
+t["l"] = 1
+end
+elif a == "wake" && s == 1 && t["l"] == 1
+t["o"] = 1
+t["l"] = 0
+elif a == "warm" && s == 0
+t["w"] = min(t["w"] + 60, 900)
+m.fx(7)
+elif (a == "newegg" || a == "reset") && s == 2
+m.t = m.fresh(t["n"] + 1)
+m.t["q"] = t["q"]
+m.fx(7)
+end
+m.save()
+end
+m.view = def ()
+var t = m.t
+var o = m.o
+var h = hour()
+o[1] = t["s"]
+o[2] = t["v"]
+o[3] = t["u"]
+o[4] = t["h"]
+o[5] = t["a"]
+o[6] = t["e"]
+o[7] = t["c"]
+o[8] = t["x"]
+o[9] = t["p"]
+o[10] = t["k"]
+o[11] = t["l"]
+o[12] = (t["l"] == 1 || (h >= 0 && m.win(h, m.hr[2], m.hr[3]))) ? 1 : 0
+o[13] = t["n"]
+o[14] = t["z"]
+o[15] = t["g"]
+o[16] = t["fk"]
+o[17] = t["q"]
+o[18] = t["i"]
+o[20] = t["w"]
+o[21] = m.eg
+return o
+end
+return m

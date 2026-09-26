@@ -1,4 +1,6 @@
-# Included via: rest_command: !include configs/rest_command.yaml
+# For the n8n brain (push or view mode). With the device brain, use
+# scripts-device.yaml instead - it needs no rest_command at all.
+# Included via: rest_command: !include homeassistant/rest_command.yaml
 # No top-level "rest_command:" key in here - the include line above supplies it.
 # Replace <N8N_HOST> with your n8n host:port, e.g. 192.168.178.50:5678
 

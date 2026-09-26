@@ -1,0 +1,54 @@
+# For the device brain (Clawd app setting "Brain" = device): Home Assistant
+# talks to the clock directly over MQTT, no n8n and no rest_command needed.
+# Merge into your scripts.yaml instead of scripts.yaml's rest_command versions;
+# the script names are the same, so lovelace-card.yaml works unchanged.
+# The topic must match the Clawd app's "Command topic" setting.
+
+clawd_feed:
+  alias: "Clawd füttern"
+  icon: mdi:food-drumstick
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: feed }
+clawd_play:
+  alias: "Clawd spielen"
+  icon: mdi:tennis-ball
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: play }
+clawd_clean:
+  alias: "Clawd putzen"
+  icon: mdi:broom
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: clean }
+clawd_med:
+  alias: "Clawd Medizin geben"
+  icon: mdi:pill
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: med }
+clawd_sleep:
+  alias: "Clawd Schlaf umschalten"
+  icon: mdi:sleep
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: sleep }
+clawd_stats:
+  alias: "Clawd Stats anzeigen"
+  icon: mdi:chart-box
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: stats }
+clawd_wake:
+  alias: "Clawd aufwecken"
+  icon: mdi:weather-sunny
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: wake }
+clawd_reset:
+  alias: "Clawd neu starten (nur wenn tot)"
+  icon: mdi:egg-outline
+  sequence:
+    - action: mqtt.publish
+      data: { topic: clawd/cmd, payload: reset }

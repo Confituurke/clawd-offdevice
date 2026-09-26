@@ -1,0 +1,14 @@
+{
+  "name": "clawd-offdevice",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Clawd, Blueforcer's AWTRIX NG virtual pet, with its rules in n8n or on the clock",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "check": "node scripts/build.js --check",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

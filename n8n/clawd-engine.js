@@ -42,7 +42,9 @@ const DEFAULTS = {
   CMD_TOPIC: 'clawd/cmd',     // device (view) and Home Assistant (both modes) -> n8n
   OFFSCREEN_REFRESH_SEC: 30,  // push mode: refresh the frame this often while Clawd is not shown
   STALE_AFTER_SEC: 90,        // push mode: AWTRIX draws a red frame if no update arrives in time
-  BURST: true                 // push mode: extra frames while an effect plays
+  BURST: true,                // push mode: extra frames while an effect plays
+  MIRROR: false,              // push mode: also publish each frame as a PNG (e.g. an HA camera)
+  MIRROR_TOPIC: 'clawd/screen'
 };
 
 // ---- palette and sprites (same as the original) -----------------------------
@@ -144,7 +146,7 @@ function makeConfig(raw) {
   const warnings = [];
   const pick = (k) => (raw[k] !== undefined && raw[k] !== null && raw[k] !== '' ? raw[k] : undefined);
 
-  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC']) {
+  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC', 'MIRROR_TOPIC']) {
     if (pick(k) !== undefined) cfg[k] = String(pick(k)).trim();
   }
   cfg.AWTRIX_HOST = cfg.AWTRIX_HOST.replace(/^https?:\/\//, '').replace(/\/+$/, '');
@@ -176,7 +178,7 @@ function makeConfig(raw) {
     warnings.push('CHILD/TEEN/ADULT_AT_HOURS');
     cfg.CHILD_AT_HOURS = DEFAULTS.CHILD_AT_HOURS; cfg.TEEN_AT_HOURS = DEFAULTS.TEEN_AT_HOURS; cfg.ADULT_AT_HOURS = DEFAULTS.ADULT_AT_HOURS;
   }
-  for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST']) {
+  for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST', 'MIRROR']) {
     if (pick(k) !== undefined) cfg[k] = toBool(pick(k), DEFAULTS[k]);
   }
 
@@ -648,7 +650,7 @@ function run(input, store, rawCfg, nowMs) {
 
   const out = {
     mode: cfg.MODE, ignore: false, push: false, payload: null, frames: [],
-    sound: null, notify: null, switchTo: false, publish: null,
+    sound: null, notify: null, switchTo: false, publish: null, mirror: null,
     base: `http://${cfg.AWTRIX_HOST}`, app: cfg.APP_NAME, warnings: cfg.warnings
   };
 
@@ -710,6 +712,7 @@ function run(input, store, rawCfg, nowMs) {
     if (out.push) {
       out.payload = render(s, cfg, nowMs);
       dev.lastPush = nowMs; dev.sig = sig;
+      if (cfg.MIRROR) out.mirror = cfg.MIRROR_TOPIC;
       // Extra frames every 250 ms while something animates, sent only right
       // after an event (not on plain ticks) and only while Clawd is shown.
       const until = animatedUntil(s, nowMs);

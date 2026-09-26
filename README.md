@@ -99,6 +99,10 @@ original Clawd script installed, delete it.
   instead; it publishes straight to MQTT.
 - Either way, [`homeassistant/lovelace-card.yaml`](homeassistant/lovelace-card.yaml) gives you a
   button grid.
+- **See the pet (push mode):** turn on `MIRROR` and add an MQTT camera on `MIRROR_TOPIC` with
+  `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock. A camera
+  rather than an MQTT image entity: an image entity's state is its update time, so the recorder
+  would store a row for every frame; a camera's stays `idle`.
 
 The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`, `play`,
 `clean`, `med`, `sleep` (toggle), `wake`, `stats`, `reset` (only while dead).
@@ -123,6 +127,8 @@ The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`,
 | `BURST` | `true` | push mode: extra frames every 250 ms while an effect plays |
 | `OFFSCREEN_REFRESH_SEC` | `30` | push mode: refresh interval while another app is shown |
 | `STALE_AFTER_SEC` | `90` | push mode: red frame after this long without updates (0 = off) |
+| `MIRROR` | `false` | push mode: also publish each pushed frame as a PNG (256x64, one 8x8 dot per LED) |
+| `MIRROR_TOPIC` | `clawd/screen` | where the PNG goes, base64, retained |
 | `STATE_TOPIC` / `CMD_TOPIC` | `clawd/state` / `clawd/cmd` | state line out and commands in: the view app and Home Assistant. In view mode they must match the app's settings; in push mode the trigger's topic list must contain `CMD_TOPIC` |
 
 A value n8n can't use falls back to its default; the engine's output lists it under `warnings`.

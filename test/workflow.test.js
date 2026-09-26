@@ -115,3 +115,22 @@ test('push workflow: burst frames are split and sent 250 ms apart', () => {
   const push = allNodes(wf).find((n) => n.name === 'Push Burst Frame');
   assert.deepEqual(push.parameters.options.batching, { batch: { batchSize: 1, batchInterval: 250 } });
 });
+
+test('push workflow: the mirror is gated, rendered in a Code node and published retained', () => {
+  const wf = load(FILES[0]);
+  assert.ok(wf.connections['Clawd Engine'].main[0].some((l) => l.node === 'Has Mirror'));
+  const settings = Object.fromEntries(wf.nodes.find((n) => n.name === 'Settings').parameters.assignments.assignments.map((a) => [a.name, a.value]));
+  assert.equal(settings['cfg.MIRROR'], false, 'off by default');
+  const node = wf.nodes.find((n) => n.name === 'Mirror Frame');
+  const out = runCode(node.parameters.jsCode, [
+    { push: true, mirror: 'clawd/screen', payload: { draw: [['pixel', 0, 0, '#FF0000']] } },
+    { push: true, mirror: null, payload: { draw: [] } }
+  ], {});
+  assert.equal(out.length, 1);
+  assert.equal(out[0].topic, 'clawd/screen');
+  assert.ok(Buffer.from(out[0].message, 'base64').subarray(1, 4).toString() === 'PNG');
+  const pub = wf.nodes.find((n) => n.name === 'Publish Mirror');
+  assert.equal(pub.parameters.options.retain, true);
+  assert.equal(pub.onError, 'continueRegularOutput');
+  assert.equal(load(FILES[1]).nodes.find((n) => n.name === 'Mirror Frame'), undefined, 'view mode has no mirror');
+});

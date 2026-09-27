@@ -39,6 +39,14 @@ function stateLines() {
   };
 }
 
+// Clawd takes the clock's global app time like every other app; a duration()
+// hook would override it (it used to cut Clawd's turn to 15 s).
+test('the view app does not override the global app time', () => {
+  for (const f of ['awtrix/clawd-view.ax', 'dist/clawd.ax']) {
+    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, f), 'utf8'), /def\s+duration\s*\(/, f);
+  }
+});
+
 const berry = findBerry();
 for (const [label, view, core] of [
   ['sources', 'awtrix/clawd-view.ax', 'awtrix/clawdcore.ax'],

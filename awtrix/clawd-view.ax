@@ -235,10 +235,6 @@ class Clawd
     self._x()
   end
 
-  def duration()
-    return 15000
-  end
-
   # Take the select button while Clawd is on screen, so a quick double press
   # scrolls the menu instead of blanking the display. Left/right close any menu
   # and keep their usual job of changing apps.

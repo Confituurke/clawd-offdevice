@@ -203,9 +203,6 @@ end
 def on_hide()
 self._x()
 end
-def duration()
-return 15000
-end
 def on_button_event(btn, ev)
 if btn != "select"
 if ev == "press" && self.u != 0 self._x() end

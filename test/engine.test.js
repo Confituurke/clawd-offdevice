@@ -318,12 +318,22 @@ test('push: stats keep the turn open however long Clawd has already been on scre
       E.run({ event: 'tick' }, store, {}, T0);
       Object.assign(store.clawd, { st: 1, ev: 1 });
       E.run({ event: 'active', app: 'clawd', prefix: 'awtrixNG' }, store, {}, T0);         // turn starts at T0
-      const r = E.run({ event: 'cmd', payload: 'stats' }, store, {}, T0 + openAt);
       if (openAt >= appMs) continue;                                                       // turn already over
-      const text = r.payload.text;
-      const passEnd = openAt + E.STATS_HOLD_MS + (text.length * 4 - 1) / REAL_PX_S * 1000;
-      const turnEnd = r.payload.durationMs;                                                // measured from turn start
-      assert.ok(turnEnd >= passEnd, `app ${appMs}, opened at ${openAt}: turn ends at ${turnEnd}, pass at ${Math.round(passEnd)}`);
+      for (const via of ['menu', 'home assistant']) {
+        const st = JSON.parse(JSON.stringify(store));
+        let r;
+        if (via === 'menu') {                                    // STATS highlighted, runs after the 2 s dwell
+          Object.assign(st.clawd, { ui: 1, mi: 6, dwell: T0 + openAt - 2000 });
+          r = E.run({ event: 'tick' }, st, {}, T0 + openAt);
+        } else r = E.run({ event: 'cmd', payload: 'stats' }, st, {}, T0 + openAt);
+        assert.equal(st.clawd.ui, 3, via);
+        // A switch (fast:true) restarts the turn on the clock; a menu pick does not.
+        const turnStart = r.switchTo ? openAt : 0;
+        const passEnd = openAt + E.STATS_HOLD_MS + (r.payload.text.length * 4 - 1) / REAL_PX_S * 1000;
+        const turnEnd = turnStart + r.payload.durationMs;
+        assert.ok(turnEnd >= passEnd, `${via}, app ${appMs}, opened at ${openAt}: turn ends at ${turnEnd}, pass at ${Math.round(passEnd)}`);
+        assert.ok(turnEnd <= passEnd + 8000, `${via}, app ${appMs}, opened at ${openAt}: turn held ${Math.round(turnEnd - passEnd)} ms past the pass`);
+      }
     }
   }
   // Opened from Home Assistant while another app shows: the switch starts a new turn.

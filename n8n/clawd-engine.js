@@ -734,6 +734,9 @@ function run(input, store, rawCfg, nowMs) {
     const onScreen = dev.fg !== false;                     // unknown counts as on screen
     out.push = userAct || out.switchTo || onScreen || sig !== dev.sig || s.fx !== prev.fx ||
       nowMs - (dev.lastPush || 0) >= cfg.OFFSCREEN_REFRESH_SEC * 1000;
+    // Switching to Clawd with fast:true restarts its turn on the clock, even
+    // when it is already on screen, and no new state/apps/active follows.
+    if (out.switchTo) dev.fgSince = nowMs;
     // STATS just opened: note how long Clawd's turn has already run (0 if
     // Clawd is not on screen yet, e.g. a Home Assistant command switches to it).
     if (s.ui === 3 && prev.ui !== 3) s.stat_turn = (dev.fg === true && dev.fgSince) ? Math.max(0, nowMs - dev.fgSince) : 0;

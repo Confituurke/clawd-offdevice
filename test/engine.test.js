@@ -17,10 +17,18 @@ function noRandom(t, fn) {
   Math.random = () => 0.999;           // no sickness, fixed potty timer
   try { return fn(); } finally { Math.random = orig; }
 }
-const ALLOWED_KEYS = new Set(['draw', 'text', 'textColor', 'repeat', 'lifetimeMs', 'lifetimeExpiry']);
+const ALLOWED_KEYS = new Set(['draw', 'text', 'textColor', 'repeat', 'scroll', 'lifetimeMs', 'lifetimeExpiry']);
+const SCROLL_KEYS = new Set(['mode', 'direction', 'entry', 'whenFits', 'speed', 'gap', 'holdMs']);
 const CMD_ARGS = { pixel: 4, line: 6, rect: 6, rectFill: 6, circle: 5, circleFill: 5, text: 5, bitmap: 6 };
 function assertValidPayload(p) {
   for (const k of Object.keys(p)) assert.ok(ALLOWED_KEYS.has(k), `unexpected payload key ${k}`);
+  if ('scroll' in p) {
+    assert.ok(p.scroll && typeof p.scroll === 'object' && !Array.isArray(p.scroll), 'scroll must be an object (AWTRIX NG rejects true)');
+    for (const [k, v] of Object.entries(p.scroll)) {
+      assert.ok(SCROLL_KEYS.has(k), `unknown scroll field ${k}`);
+      if (['speed', 'gap', 'holdMs'].includes(k)) assert.ok(Number.isInteger(v) && v >= 0, `scroll.${k}`);
+    }
+  }
   assert.ok(JSON.stringify(p).length < 8192, 'payload over 8 KB');
   for (const c of p.draw || []) {
     assert.ok(Array.isArray(c) && typeof c[0] === 'string', 'command must be an array');
@@ -282,16 +290,37 @@ test('push: every rendered payload is valid for AWTRIX NG', () => {
   assert.ok(biggest < 3000, `largest frame ${biggest} bytes`);
 });
 
-test('push: stats scroll once, with no invalid scroll key', () => {
+test('push: stats scroll once and return to the pet within Clawd\'s turn', () => {
   const store = {};
   E.run({ event: 'tick' }, store, {}, T0);
   Object.assign(store.clawd, { st: 1, ev: 1 });
   const r = E.run({ event: 'action', name: 'stats' }, store, {}, T0 + 1000);
-  assert.equal(r.payload.repeat, 1);
-  assert.ok(!('scroll' in r.payload));
-  assert.ok(store.clawd.stat_ms > 9000);
+  assertValidPayload(r.payload);
+  // AWTRIX ends the page, and the app's turn, when `repeat` runs out - before
+  // the pet frame could replace the text. Found on a real clock.
+  assert.ok(!('repeat' in r.payload), 'no repeat');
+  assert.deepEqual(r.payload.scroll, { speed: 100, holdMs: E.STATS_HOLD_MS });
   E.run({ event: 'tick' }, store, {}, T0 + 1000 + store.clawd.stat_ms + 10);
   assert.equal(store.clawd.ui, 0);
+});
+
+test('push: stats close after the pass and before a second one, whatever the tick phase', () => {
+  // Measured on the clock: rests holdMs, scrolls at ~23 px/s (docs: 21), then
+  // rests holdMs again at the start before scrolling a second time.
+  const REAL_PX_S = 23, TICK = 2000, PUSH_MS = 300;
+  for (const name of ['Clawd', 'Mr Pinchy', 'AAAAAAAAAAAA']) {
+    for (const age of [0, 5 * 3600, 400 * 86400]) {
+      const text = E.statsText({ age, gen: 12, cs: -1234, hp: 10000 }, E.makeConfig({ PET_NAME: name }));
+      const pass = (text.length * 4 - 1) / REAL_PX_S * 1000;
+      const passEnd = E.STATS_HOLD_MS + pass, secondStart = passEnd + E.STATS_HOLD_MS;
+      const statMs = E.statsScrollMs(text);
+      for (let phase = 0; phase < TICK; phase += 250) {
+        const closeTick = Math.ceil((statMs - phase) / TICK) * TICK + phase;   // first tick at/after stat_ms
+        assert.ok(closeTick >= passEnd, `${name}/${age}: closes before the pass ended`);
+        assert.ok(closeTick + PUSH_MS < secondStart, `${name}/${age}: second pass visible (${Math.round(closeTick + PUSH_MS - secondStart)} ms)`);
+      }
+    }
+  }
 });
 
 test('push: off screen, plain ticks only push on change or every 30 s', () => {

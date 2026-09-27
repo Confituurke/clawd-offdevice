@@ -346,6 +346,16 @@ function advanceTime(s, cfg, nowMs) {
 }
 
 // ---- actions -----------------------------------------------------------------
+// Push-mode STATS: the text rests this long at the start, scrolls through once,
+// and returns to the start for another rest; the engine switches back to the
+// pet during that second rest. Measured on an AWTRIX NG 1.1.2 TC001: the docs'
+// 21 px/s at speed 100 is really ~23 px/s, so the pass is timed at 21 px/s (it
+// has surely ended) and the rest is long enough to cover that gap, the 2 s tick
+// and the push. No `repeat`: AWTRIX ends a page, and so the app's whole turn,
+// once its repeats are done, before the pet frame could arrive.
+const STATS_HOLD_MS = 3500;
+function statsScrollMs(text) { return STATS_HOLD_MS + Math.ceil((text.length * 4 - 1) / 21 * 1000); }
+
 function statsText(s, cfg) {
   const a = s.age;
   return `${cfg.PET_NAME}  AGE ${Math.floor(a / 86400)}d${Math.floor((a % 86400) / 3600)}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`;
@@ -393,8 +403,7 @@ function action(s, id, cfg, nowMs, opt) {
   } else if (id === 6) {                                 // STATS
     if (cfg.MODE === 'view') { fx(s, 10, nowMs); return; } // the device shows them
     s.ui = 3; s.stat_open = nowMs;
-    // one pass of scrolling text at ~21 px/s, ~4 px per character, + hold
-    s.stat_ms = Math.round(((statsText(s, cfg).length * 4 + 32) / 21) * 1000) + 1500;
+    s.stat_ms = statsScrollMs(statsText(s, cfg));
   } else if (id === 7 || id === 10) {                    // RESET / NEW EGG - only while dead
     if (s.st === 2) {
       const gen = s.gen, n = s.fx;
@@ -477,7 +486,7 @@ function withLifetime(p, cfg) {
 // Render the push-mode frame for time t (ms).
 function render(s, cfg, t) {
   if (s.ui === 3) {
-    return withLifetime({ text: statsText(s, cfg), textColor: '#F0E6D8', repeat: 1 }, cfg);
+    return withLifetime({ text: statsText(s, cfg), textColor: '#F0E6D8', scroll: { speed: 100, holdMs: STATS_HOLD_MS } }, cfg);
   }
   const cv = new Canvas();
 
@@ -771,7 +780,7 @@ function runN8n(input, staticData, rawCfg, nowMs) {
 }
 
 const ClawdEngine = {
-  ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND,
+  ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, statsScrollMs,
   makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
   checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
   stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n

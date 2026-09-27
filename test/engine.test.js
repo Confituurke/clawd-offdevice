@@ -17,7 +17,7 @@ function noRandom(t, fn) {
   Math.random = () => 0.999;           // no sickness, fixed potty timer
   try { return fn(); } finally { Math.random = orig; }
 }
-const ALLOWED_KEYS = new Set(['draw', 'text', 'textColor', 'repeat', 'scroll', 'lifetimeMs', 'lifetimeExpiry']);
+const ALLOWED_KEYS = new Set(['draw', 'text', 'textColor', 'repeat', 'scroll', 'durationMs', 'lifetimeMs', 'lifetimeExpiry']);
 const SCROLL_KEYS = new Set(['mode', 'direction', 'entry', 'whenFits', 'speed', 'gap', 'holdMs']);
 const CMD_ARGS = { pixel: 4, line: 6, rect: 6, rectFill: 6, circle: 5, circleFill: 5, text: 5, bitmap: 6 };
 function assertValidPayload(p) {
@@ -299,7 +299,10 @@ test('push: stats scroll once and return to the pet within Clawd\'s turn', () =>
   // AWTRIX ends the page, and the app's turn, when `repeat` runs out - before
   // the pet frame could replace the text. Found on a real clock.
   assert.ok(!('repeat' in r.payload), 'no repeat');
-  assert.deepEqual(r.payload.scroll, { speed: 100, holdMs: E.STATS_HOLD_MS });
+  assert.deepEqual(r.payload.scroll, { mode: 'wrap', speed: 100, holdMs: E.STATS_HOLD_MS });
+  // AWTRIX hands over when the dwell is up, wherever the text is (default 7 s),
+  // so the page must ask for enough time: the whole pass plus the pet after it.
+  assert.ok(r.payload.durationMs >= store.clawd.stat_ms + 2000, `durationMs ${r.payload.durationMs} vs stats ${store.clawd.stat_ms}`);
   E.run({ event: 'tick' }, store, {}, T0 + 1000 + store.clawd.stat_ms + 10);
   assert.equal(store.clawd.ui, 0);
 });

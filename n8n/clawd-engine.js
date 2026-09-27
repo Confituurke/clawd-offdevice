@@ -353,7 +353,13 @@ function advanceTime(s, cfg, nowMs) {
 // has surely ended) and the rest is long enough to cover that gap, the 2 s tick
 // and the push. No `repeat`: AWTRIX ends a page, and so the app's whole turn,
 // once its repeats are done, before the pet frame could arrive.
+// Without `repeat` the page no longer holds the turn open, and one pass takes
+// ~11 s against AWTRIX's default 7 s app time, so the page also asks for a
+// `durationMs` long enough for the pass plus a few seconds of the pet after.
+// `mode: "wrap"` is set explicitly so a different global scroll mode (bounce,
+// loop) cannot change the timing measured above.
 const STATS_HOLD_MS = 3500;
+const STATS_AFTER_MS = 4000;
 function statsScrollMs(text) { return STATS_HOLD_MS + Math.ceil((text.length * 4 - 1) / 21 * 1000); }
 
 function statsText(s, cfg) {
@@ -486,7 +492,11 @@ function withLifetime(p, cfg) {
 // Render the push-mode frame for time t (ms).
 function render(s, cfg, t) {
   if (s.ui === 3) {
-    return withLifetime({ text: statsText(s, cfg), textColor: '#F0E6D8', scroll: { speed: 100, holdMs: STATS_HOLD_MS } }, cfg);
+    return withLifetime({
+      text: statsText(s, cfg), textColor: '#F0E6D8',
+      scroll: { mode: 'wrap', speed: 100, holdMs: STATS_HOLD_MS },
+      durationMs: (s.stat_ms || 8000) + STATS_AFTER_MS
+    }, cfg);
   }
   const cv = new Canvas();
 
@@ -780,7 +790,7 @@ function runN8n(input, staticData, rawCfg, nowMs) {
 }
 
 const ClawdEngine = {
-  ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, statsScrollMs,
+  ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, STATS_AFTER_MS, statsScrollMs,
   makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
   checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
   stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n

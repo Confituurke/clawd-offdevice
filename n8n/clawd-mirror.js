@@ -2,6 +2,10 @@
 // into a PNG, so something else - a Home Assistant MQTT camera, say - can show
 // the pet. Optional; see MIRROR in the README.
 //
+// View mode has no frames in n8n (the clock draws), so its mirror workflow reads
+// the clock's framebuffer instead - GET /api/v1/display/screen, 256 colours as
+// 0xRRGGBB numbers - while Clawd is on screen; see screenFrame() and mirrorGate().
+//
 // Only what the engine draws is supported: pixel, pixels, line, rect,
 // rectFill and text, plus a payload's plain `text`. Text uses a 3x5 font
 // with the same 3 px glyph + 1 px spacing as AWTRIX's small font.
@@ -78,6 +82,52 @@ function mirrorFrame(payload) {
   return fb;
 }
 
+// The clock's framebuffer ({ pixels: [256 x 0xRRGGBB] }, row by row) -> the same
+// frame buffer mirrorFrame() makes. null if it isn't a 32x8 framebuffer.
+function screenFrame(screen) {
+  const px = Array.isArray(screen) ? screen : screen && screen.pixels;
+  if (!Array.isArray(px) || px.length !== MIRROR_W * MIRROR_H) return null;
+  const fb = new Array(MIRROR_W * MIRROR_H).fill(null);
+  for (let i = 0; i < px.length; i++) {
+    const v = Number(px[i]);
+    if (!Number.isInteger(v) || v < 0 || v > 0xFFFFFF) return null;
+    if (v) fb[i] = '#' + v.toString(16).toUpperCase().padStart(6, '0');
+  }
+  return fb;
+}
+
+// The view-mode mirror workflow's settings, normalised like the engine does.
+const MIRROR_DEFAULTS = { MIRROR: false, AWTRIX_HOST: '192.168.1.50', MQTT_PREFIX: 'awtrixNG', APP_NAME: 'clawd', MIRROR_TOPIC: 'clawd/screen' };
+function mirrorConfig(raw) {
+  raw = raw || {};
+  const cfg = Object.assign({}, MIRROR_DEFAULTS);
+  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'MIRROR_TOPIC']) {
+    if (raw[k] !== undefined && raw[k] !== null && String(raw[k]).trim() !== '') cfg[k] = String(raw[k]).trim();
+  }
+  cfg.MIRROR = raw.MIRROR === true || String(raw.MIRROR).toLowerCase() === 'true';
+  cfg.AWTRIX_HOST = cfg.AWTRIX_HOST.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return cfg;
+}
+
+// Should this run read the clock's screen? input is { event: 'tick' } or
+// { event: 'active', app, prefix } from <prefix>/state/apps/active. An app
+// change only notes whether Clawd is shown (n8n static data, written only when
+// it changes) and never reads the screen itself; ticks read it and never write.
+// n8n writes a run's static data back when the run ends, so a run that waited
+// up to 2 s on the clock could otherwise put back an old "Clawd is on screen".
+function mirrorGate(input, store, rawCfg) {
+  const cfg = rawCfg && rawCfg.MIRROR_TOPIC && typeof rawCfg.MIRROR === 'boolean' ? rawCfg : mirrorConfig(rawCfg);
+  input = input || { event: 'tick' };
+  if (input.event === 'active') {
+    if (input.prefix !== undefined && input.prefix !== cfg.MQTT_PREFIX) return null;
+    const fg = String(input.app || '').replace(/^"|"$/g, '') === cfg.APP_NAME;
+    if (store.mirrorFg !== fg) store.mirrorFg = fg;
+    return null;
+  }
+  if (input.event !== 'tick' || !cfg.MIRROR || store.mirrorFg !== true) return null;
+  return { url: `http://${cfg.AWTRIX_HOST}/api/v1/display/screen`, topic: cfg.MIRROR_TOPIC };
+}
+
 const MIRROR_CRC = (() => {
   const t = [];
   for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t.push(c >>> 0); }
@@ -133,7 +183,8 @@ function mirrorBase64(bytes) {
 }
 
 const ClawdMirror = {
-  mirrorFrame, mirrorPng, mirrorBase64,
-  pngBase64: (payload) => mirrorBase64(mirrorPng(mirrorFrame(payload)))
+  mirrorFrame, mirrorPng, mirrorBase64, screenFrame, mirrorConfig, mirrorGate, MIRROR_DEFAULTS,
+  pngBase64: (payload) => mirrorBase64(mirrorPng(mirrorFrame(payload))),
+  screenPngBase64: (screen) => { const fb = screenFrame(screen); return fb ? mirrorBase64(mirrorPng(fb)) : null; }
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = ClawdMirror;

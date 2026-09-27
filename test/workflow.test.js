@@ -146,3 +146,42 @@ test('push workflow: the mirror is gated, rendered in a Code node and published 
   assert.equal(pub.onError, 'continueRegularOutput');
   assert.equal(load(FILES[1]).nodes.find((n) => n.name === 'Mirror Frame'), undefined, 'view mode has no mirror');
 });
+
+test('view mirror workflow: reads the screen only while Clawd is shown and publishes a retained PNG', () => {
+  const wf = load('n8n/clawd-workflow-mirror.json');
+  const names = wf.nodes.map((n) => n.name);
+  assert.equal(new Set(names).size, names.length);
+  for (const [from, c] of Object.entries(wf.connections)) {
+    assert.ok(names.includes(from), from);
+    for (const out of c.main) for (const l of out) assert.ok(names.includes(l.node), l.node);
+  }
+  assert.equal(wf.settings.saveDataSuccessExecution, 'none');
+  const node = (n) => wf.nodes.find((x) => x.name === n);
+  assert.equal(node('App On Screen (MQTT)').parameters.topics, '+/state/apps/active');
+  const every = node('Tick every 10s').parameters.rule.interval[0];
+  assert.ok(every.field === 'seconds' && every.secondsInterval >= 5 && every.secondsInterval <= 10);
+  const cfg = Object.fromEntries(node('Settings').parameters.assignments.assignments.map((a) => [a.name, a.value]));
+  assert.equal(cfg['cfg.MIRROR'], false, 'off by default');
+  assert.equal(cfg['cfg.MIRROR_TOPIC'], 'clawd/screen');
+  const http = node('Read Screen');
+  assert.equal(http.parameters.method, 'GET');
+  assert.equal(http.parameters.options.timeout, 2000);
+  assert.equal(http.onError, 'continueRegularOutput', 'a failed read is ignored');
+  const pub = node('Publish Mirror');
+  assert.equal(pub.parameters.options.retain, true);
+  assert.equal(pub.onError, 'continueRegularOutput');
+
+  // The Code nodes, run as n8n runs them: app change, then tick, then the screen.
+  const store = {};
+  const cfgIn = { MIRROR: true, AWTRIX_HOST: 'clock', MQTT_PREFIX: 'awtrix', APP_NAME: 'clawd', MIRROR_TOPIC: 'clawd/screen' };
+  const ev = runCode(node('Active Event').parameters.jsCode, [{ topic: 'awtrix/state/apps/active', message: 'clawd' }], {});
+  assert.deepEqual(ev, [{ event: 'active', app: 'clawd', prefix: 'awtrix' }]);
+  assert.deepEqual(runCode(node('Mirror Gate').parameters.jsCode, [{ ...ev[0], cfg: cfgIn }], store), []);
+  assert.deepEqual(runCode(node('Mirror Gate').parameters.jsCode, [{ event: 'tick', cfg: cfgIn }], store),
+    [{ url: 'http://clock/api/v1/display/screen', topic: 'clawd/screen' }]);
+  const px = new Array(256).fill(0); px[0] = 0xD97757;
+  const png = runCode(node('Screen To PNG').parameters.jsCode, [{ pixels: px }], {});
+  assert.equal(png.length, 1);
+  assert.equal(Buffer.from(png[0].message, 'base64').subarray(1, 4).toString(), 'PNG');
+  assert.deepEqual(runCode(node('Screen To PNG').parameters.jsCode, [{ error: { message: 'timeout of 2000ms exceeded' } }], {}), [], 'errors are skipped');
+});

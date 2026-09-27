@@ -84,3 +84,40 @@ test('engine: mirror is opt-in and only set on pushed frames', () => {
   assert.equal(on.mirror, 'home/clawd/png');
   assert.equal(E.run({ event: 'tick' }, {}, { MODE: 'view', MIRROR: true }, t).mirror, null, 'not in view mode');
 });
+
+test('view mirror: the clock\'s framebuffer becomes the same PNG', () => {
+  const px = new Array(256).fill(0);
+  px[2 * 32 + 3] = 0xFF0000; px[6 * 32 + 19] = 0x803020; px[7 * 32 + 31] = 0x0000FF;
+  const img = decode(Buffer.from(M.screenPngBase64({ pixels: px }), 'base64'));
+  assert.equal(img.w, 256); assert.equal(img.h, 64);
+  assert.equal(led(img, 3, 2), '#FF0000');
+  assert.equal(led(img, 19, 6), '#803020');
+  assert.equal(led(img, 31, 7), '#0000FF', 'rows run left to right, top to bottom');
+  assert.equal(led(img, 0, 0), '#161616', '0 is an unlit LED');
+  // Same picture whether it comes from draw commands or the framebuffer.
+  assert.deepEqual(M.screenFrame(px), M.mirrorFrame({ draw: [['pixel', 3, 2, '#FF0000'], ['pixel', 19, 6, '#803020'], ['pixel', 31, 7, '#0000FF']] }));
+  for (const bad of [null, {}, { pixels: [1, 2] }, { pixels: new Array(256).fill('x') }, { pixels: new Array(256).fill(-1) }, { error: { message: 'timeout' } }]) {
+    assert.equal(M.screenPngBase64(bad), null, JSON.stringify(bad).slice(0, 40));
+  }
+});
+
+test('view mirror: reads the screen only on ticks while MIRROR is on and Clawd is shown', () => {
+  const cfg = { MIRROR: true, AWTRIX_HOST: 'http://clock.local/', MQTT_PREFIX: 'awtrix' };
+  const store = {};
+  assert.equal(M.mirrorGate({ event: 'tick' }, store, cfg), null, 'unknown: not shown');
+  assert.equal(M.mirrorGate({ event: 'active', app: 'clawd', prefix: 'awtrix' }, store, cfg), null, 'an app change never reads');
+  assert.equal(store.mirrorFg, true);
+  assert.deepEqual(M.mirrorGate({ event: 'tick' }, store, cfg), { url: 'http://clock.local/api/v1/display/screen', topic: 'clawd/screen' });
+  M.mirrorGate({ event: 'active', app: 'clawd', prefix: 'otherclock' }, store, cfg);
+  assert.equal(store.mirrorFg, true, 'another clock\'s app changes are ignored');
+  M.mirrorGate({ event: 'active', app: 'weather', prefix: 'awtrix' }, store, cfg);
+  assert.equal(M.mirrorGate({ event: 'tick' }, store, cfg), null, 'Clawd left the screen');
+  // Off by default, and a tick writes nothing to the static data.
+  const s2 = { mirrorFg: true };
+  assert.equal(M.mirrorConfig({}).MIRROR, false);
+  assert.equal(M.mirrorGate({ event: 'tick' }, s2, {}), null);
+  const watched = new Proxy({ mirrorFg: true }, { set() { throw new Error('tick wrote static data'); } });
+  assert.ok(M.mirrorGate({ event: 'tick' }, watched, cfg));
+  const same = new Proxy({ mirrorFg: true }, { set() { throw new Error('unchanged app wrote static data'); } });
+  M.mirrorGate({ event: 'active', app: 'clawd', prefix: 'awtrix' }, same, cfg);
+});

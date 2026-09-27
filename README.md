@@ -101,10 +101,17 @@ original Clawd script installed, delete it.
   instead; it publishes straight to MQTT.
 - Either way, [`homeassistant/lovelace-card.yaml`](homeassistant/lovelace-card.yaml) gives you a
   button grid.
-- **See the pet (push mode only):** turn on `MIRROR` and add an MQTT camera on `MIRROR_TOPIC` with
-  `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock. In view
-  mode the clock draws the pet itself and n8n has no frames to mirror, so the camera keeps its
-  last retained picture: leave the card out (or clear the retained `MIRROR_TOPIC`). A camera
+- **See the pet:** add an MQTT camera on `MIRROR_TOPIC` (default `clawd/screen`) with
+  `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock.
+  - *Push mode:* turn on `MIRROR` in the push workflow's Settings; every pushed frame is mirrored.
+  - *View mode:* the clock draws the pet, so n8n has no frames of its own. Import
+    [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json) as well, set its MQTT
+    credential and Settings (same `AWTRIX_HOST`, `MQTT_PREFIX` and `APP_NAME` as the view
+    workflow), turn on `MIRROR` and publish it. While Clawd is on screen it reads the clock's
+    `GET /api/v1/display/screen` every 10 s (2 s timeout, failures skipped) and publishes that
+    as the PNG; with another app on screen it reads nothing and the camera keeps Clawd's last
+    picture. Each read is a request the clock has to answer, so don't set the tick below 5 s.
+    Not needed (and not wanted) next to the push workflow. A camera
   rather than an MQTT image entity: an image entity's state is its update time, so the recorder
   would store a row for every frame; a camera's stays `idle`.
 

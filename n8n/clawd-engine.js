@@ -39,7 +39,8 @@ const DEFAULTS = {
   NOTIFY: false,              // "<name> needs you!" notifications
   SWITCH_ON_EVENTS: true,     // bring Clawd on screen when it hatches, evolves, falls ill or dies
   STATE_TOPIC: 'clawd/state', // n8n -> device (view) and Home Assistant (both modes)
-  CMD_TOPIC: 'clawd/cmd',     // device (view) and Home Assistant (both modes) -> n8n
+  CMD_TOPIC: 'clawd/cmd',     // the clock's view app -> n8n (view mode)
+  HA_TOPIC: 'clawd/ha',       // Home Assistant -> n8n (both modes): apply and bring Clawd on screen
   OFFSCREEN_REFRESH_SEC: 30,  // push mode: refresh the frame this often while Clawd is not shown
   STALE_AFTER_SEC: 90,        // push mode: AWTRIX draws a red frame if no update arrives in time
   BURST: true,                // push mode: extra frames while an effect plays
@@ -146,12 +147,14 @@ function makeConfig(raw) {
   const warnings = [];
   const pick = (k) => (raw[k] !== undefined && raw[k] !== null && raw[k] !== '' ? raw[k] : undefined);
 
-  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC', 'MIRROR_TOPIC']) {
+  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC', 'HA_TOPIC', 'MIRROR_TOPIC']) {
     if (pick(k) !== undefined) cfg[k] = String(pick(k)).trim();
   }
   cfg.AWTRIX_HOST = cfg.AWTRIX_HOST.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   cfg.PET_NAME = cfg.PET_NAME.slice(0, 12);
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(cfg.APP_NAME)) { warnings.push('APP_NAME'); cfg.APP_NAME = DEFAULTS.APP_NAME; }
+  // The clock's commands must never pass for Home Assistant's (they would switch apps).
+  if (cfg.HA_TOPIC === cfg.CMD_TOPIC) { warnings.push('HA_TOPIC'); cfg.HA_TOPIC = DEFAULTS.HA_TOPIC === cfg.CMD_TOPIC ? '' : DEFAULTS.HA_TOPIC; }
 
   const mode = String(pick('MODE') || DEFAULTS.MODE).toLowerCase();
   if (mode === 'push' || mode === 'view') cfg.MODE = mode; else warnings.push('MODE');
@@ -660,7 +663,7 @@ function checkNotify(s, cfg, nowMs) {
 //         { event: 'button', btn: 'left'|'select'|'right', prefix }  (press edge only)
 //         { event: 'active', app, prefix }                           (<prefix>/state/apps/active)
 //         { event: 'action', name }                                  (Home Assistant webhook)
-//         { event: 'cmd', payload }                                  (view mode, from the device)
+//         { event: 'cmd', payload, topic }   (MQTT: CMD_TOPIC from the view app, HA_TOPIC from Home Assistant)
 // store:  a persistent object (n8n workflow static data)
 // Returns what the workflow should do; see README "How the workflow uses the result".
 function run(input, store, rawCfg, nowMs) {
@@ -712,9 +715,9 @@ function run(input, store, rawCfg, nowMs) {
     const c = parseCmd(input.payload);
     if (!c) { out.ignore = true; return out; }
     action(s, c.id, cfg, nowMs, c);
-    // In push mode nothing on the clock sends commands, so they come from
-    // Home Assistant (or similar) and, like the webhook, bring Clawd on screen.
-    if (cfg.MODE === 'push') out.switchTo = true;
+    // Home Assistant's topic works like the webhook and brings Clawd on
+    // screen; the clock's own commands come from Clawd, already shown.
+    if (input.topic !== undefined && input.topic === cfg.HA_TOPIC) out.switchTo = true;
     userAct = true;
   }
 

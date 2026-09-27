@@ -83,20 +83,21 @@ test('push workflow: MQTT events are parsed from AWTRIX NG topics', () => {
     { topic: 'awtrixNG/state/buttons/select', message: '0' },
     { topic: 'home/clock/state/apps/active', message: 'clawd' },
     { topic: 'awtrixNG/state/device', message: '{}' },
-    { topic: 'clawd/cmd', message: 'feed' },
-    { topic: 'clawd/cmd', message: '' }
+    { topic: 'clawd/ha', message: 'feed' },
+    { topic: 'clawd/ha', message: '' }
   ], {});
   assert.deepEqual(out, [
     { event: 'button', btn: 'select', prefix: 'awtrixNG' },
     { event: 'active', app: 'clawd', prefix: 'home/clock' },
-    { event: 'cmd', payload: 'feed' }
+    { event: 'cmd', payload: 'feed', topic: 'clawd/ha' }
   ]);
 });
 
-test('push workflow: listens on the command topic and publishes the retained state line', () => {
+test('push workflow: listens on Home Assistant\'s topic and publishes the retained state line', () => {
   const wf = load(FILES[0]);
   const trg = wf.nodes.find((n) => n.name === 'AWTRIX MQTT');
-  assert.ok(trg.parameters.topics.split(',').includes('clawd/cmd'));
+  assert.ok(trg.parameters.topics.split(',').includes('clawd/ha'));
+  assert.ok(!trg.parameters.topics.split(',').includes('clawd/cmd'), 'clawd/cmd is the clock\'s');
   const pub = wf.nodes.find((n) => n.name === 'Publish State');
   assert.equal(pub.type, 'n8n-nodes-base.mqtt');
   assert.equal(pub.parameters.options.retain, true);
@@ -104,7 +105,18 @@ test('push workflow: listens on the command topic and publishes the retained sta
   assert.ok(wf.connections['Has State'].main[0].some((l) => l.node === 'Publish State'));
   assert.ok(wf.connections['Clawd Engine'].main[0].some((l) => l.node === 'Has State'));
   const settings = wf.nodes.find((n) => n.name === 'Settings').parameters.assignments.assignments.map((a) => a.name);
-  for (const k of ['cfg.STATE_TOPIC', 'cfg.CMD_TOPIC']) assert.ok(settings.includes(k), k);
+  for (const k of ['cfg.STATE_TOPIC', 'cfg.HA_TOPIC']) assert.ok(settings.includes(k), k);
+});
+
+test('view workflow: listens on the clock\'s and Home Assistant\'s topics and passes the topic on', () => {
+  const wf = load(FILES[1]);
+  const trg = wf.nodes.find((n) => n.name === 'Device Commands (MQTT)');
+  assert.deepEqual(trg.parameters.topics.split(','), ['clawd/cmd', 'clawd/ha']);
+  const node = wf.nodes.find((n) => n.name === 'Command Event');
+  assert.deepEqual(runCode(node.parameters.jsCode, [{ topic: 'clawd/ha', message: 'feed' }], {}),
+    [{ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }]);
+  const settings = wf.nodes.find((n) => n.name === 'Settings').parameters.assignments.assignments.map((a) => a.name);
+  for (const k of ['cfg.STATE_TOPIC', 'cfg.CMD_TOPIC', 'cfg.HA_TOPIC']) assert.ok(settings.includes(k), k);
 });
 
 test('push workflow: burst frames are split and sent 250 ms apart', () => {

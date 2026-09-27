@@ -22,7 +22,7 @@ Clawd app (Apps tab, gear button):
 | Pet name | Clawd | shown in STATS |
 | Sound | off | effect tunes on the buzzer |
 | State topic | `clawd/state` | n8n brain: where n8n publishes the state |
-| Command topic | `clawd/cmd` | n8n brain: where button actions go. Device brain: where Home Assistant sends commands |
+| Command topic | `clawd/cmd` | n8n brain: where button actions go (Home Assistant uses n8n's `HA_TOPIC`, `clawd/ha`, instead). Device brain: where Home Assistant sends commands |
 
 `clawdcore` module (Modules card, gear button): hours until hungry (18), egg
 hatch minutes (30), child/teen/adult ages (12/36/72 h), sleep window (22-8),

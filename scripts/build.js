@@ -50,13 +50,13 @@ const TICK_EVENT = `return [{ json: { event: 'tick' } }];`;
 const MQTT_EVENT = `// AWTRIX NG publishes "1" on press and "0" on release (retained), and the
 // name of the app on screen as a plain string. Only presses and app changes
 // matter; the engine checks the prefix against the Settings node. Anything
-// else this trigger receives is the command topic (Home Assistant).
+// else this trigger receives is Home Assistant's topic (HA_TOPIC).
 const out = [];
 for (const item of $input.all()) {
   const topic = String(item.json.topic || '');
   const msg = String(item.json.message ?? '').trim();
   const at = topic.lastIndexOf('/state/');
-  if (at < 0) { if (msg) out.push({ json: { event: 'cmd', payload: msg } }); continue; }
+  if (at < 0) { if (msg) out.push({ json: { event: 'cmd', payload: msg, topic } }); continue; }
   const prefix = topic.slice(0, at);
   const rest = topic.slice(at + 7).split('/');
   if (rest[0] === 'buttons' && rest.length === 2) {
@@ -76,8 +76,9 @@ for (const item of $input.all()) {
 }
 return out;`;
 
-const CMD_EVENT = `// The on-device view script publishes {"a":"feed"} etc. on the command topic.
-return $input.all().map((item) => ({ json: { event: 'cmd', payload: String(item.json.message ?? '') } }));`;
+const CMD_EVENT = `// The on-device view script publishes {"a":"feed"} etc. on CMD_TOPIC, Home
+// Assistant on HA_TOPIC; the engine tells them apart by topic.
+return $input.all().map((item) => ({ json: { event: 'cmd', payload: String(item.json.message ?? ''), topic: String(item.json.topic || '') } }));`;
 
 const SPLIT_FRAMES = `// One item per extra frame; the next node sends them 250 ms apart.
 const out = [];
@@ -174,7 +175,9 @@ function settings(mode, pos) {
   ];
   if (mode === 'push') rows.push(['BURST', d.BURST, 'boolean'], ['OFFSCREEN_REFRESH_SEC', d.OFFSCREEN_REFRESH_SEC, 'number'], ['STALE_AFTER_SEC', d.STALE_AFTER_SEC, 'number'],
     ['MIRROR', d.MIRROR, 'boolean'], ['MIRROR_TOPIC', d.MIRROR_TOPIC, 'string']);
-  rows.push(['STATE_TOPIC', d.STATE_TOPIC, 'string'], ['CMD_TOPIC', d.CMD_TOPIC, 'string']);
+  rows.push(['STATE_TOPIC', d.STATE_TOPIC, 'string']);
+  if (mode === 'view') rows.push(['CMD_TOPIC', d.CMD_TOPIC, 'string']);
+  rows.push(['HA_TOPIC', d.HA_TOPIC, 'string']);
   return {
     id: id('set'), name: 'Settings', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos,
     notes: 'All of Clawd\'s settings live here. See README "Settings".',
@@ -273,8 +276,8 @@ function pushWorkflow() {
   seq = 0;
   const mqttNode = { id: id('trg'), name: 'AWTRIX MQTT', type: 'n8n-nodes-base.mqttTrigger', typeVersion: 1, position: [-600, 200],
     credentials: MQTT_CRED,
-    notes: 'Buttons and the app on screen ("+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it), plus the command topic for Home Assistant, which must match CMD_TOPIC in Settings.',
-    parameters: { topics: `+/state/buttons/+,+/state/apps/active,${E.DEFAULTS.CMD_TOPIC}`, options: {} } };
+    notes: 'Buttons and the app on screen ("+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it), plus Home Assistant\'s topic, which must match HA_TOPIC in Settings.',
+    parameters: { topics: `+/state/buttons/+,+/state/apps/active,${E.DEFAULTS.HA_TOPIC}`, options: {} } };
   const nodes = triggers('Tick every 2s', 2, mqttNode, 'MQTT Event', MQTT_EVENT).concat([
     settings('push', [-160, 200]),
     code('Clawd Engine', ENGINE + ENGINE_WRAPPER, [60, 200], 'Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js.'),
@@ -309,8 +312,8 @@ function viewWorkflow() {
   seq = 0;
   const mqttNode = { id: id('trg'), name: 'Device Commands (MQTT)', type: 'n8n-nodes-base.mqttTrigger', typeVersion: 1, position: [-600, 200],
     credentials: MQTT_CRED,
-    notes: 'Must match the "Command topic" setting of the Clawd script and CMD_TOPIC in Settings.',
-    parameters: { topics: E.DEFAULTS.CMD_TOPIC, options: {} } };
+    notes: 'The Clawd script\'s commands (its "Command topic" setting, CMD_TOPIC in Settings) and Home Assistant\'s (HA_TOPIC in Settings).',
+    parameters: { topics: `${E.DEFAULTS.CMD_TOPIC},${E.DEFAULTS.HA_TOPIC}`, options: {} } };
   const nodes = triggers('Tick every 15s', 15, mqttNode, 'Command Event', CMD_EVENT).concat([
     settings('view', [-160, 200]),
     code('Clawd Engine', ENGINE + ENGINE_WRAPPER, [60, 200], 'Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js.'),

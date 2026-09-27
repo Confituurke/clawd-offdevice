@@ -86,12 +86,14 @@ original Clawd script installed, delete it.
 
 ### 3. Home Assistant (optional)
 
-- **Over MQTT (any mode, no HA restart):** publish a plain action word (`feed`) or
-  `{"a":"feed"}` to the command topic (`CMD_TOPIC`, default `clawd/cmd`), e.g. with MQTT
-  `button` entities or `mqtt.publish`. In push mode it applies the action and brings Clawd on
-  screen; in view mode it goes the same way the clock's own commands do. The retained state
-  line on `STATE_TOPIC` (see [awtrix/README.md](awtrix/README.md#how-the-pieces-talk)) carries
-  every stat for sensors, in push and view mode alike.
+- **n8n brain (push or view), over MQTT (no HA restart):** merge
+  [`homeassistant/scripts-mqtt.yaml`](homeassistant/scripts-mqtt.yaml) into your scripts, or
+  publish a plain action word (`feed`) or `{"a":"feed"}` to `HA_TOPIC` (default `clawd/ha`)
+  yourself, e.g. with MQTT `button` entities. In both modes it applies the action and brings
+  Clawd on screen, like the webhook. Don't use `clawd/cmd` (`CMD_TOPIC`) for this: that is the
+  clock's own topic, and its commands never switch apps. The retained state line on
+  `STATE_TOPIC` (see [awtrix/README.md](awtrix/README.md#how-the-pieces-talk)) carries every
+  stat for sensors, in push and view mode alike.
 - **n8n brain (push or view), via the webhook:** add [`homeassistant/rest_command.yaml`](homeassistant/rest_command.yaml)
   (`rest_command: !include homeassistant/rest_command.yaml`, replace `<N8N_HOST>`, restart HA
   fully) and merge [`homeassistant/scripts.yaml`](homeassistant/scripts.yaml) into yours.
@@ -99,8 +101,10 @@ original Clawd script installed, delete it.
   instead; it publishes straight to MQTT.
 - Either way, [`homeassistant/lovelace-card.yaml`](homeassistant/lovelace-card.yaml) gives you a
   button grid.
-- **See the pet (push mode):** turn on `MIRROR` and add an MQTT camera on `MIRROR_TOPIC` with
-  `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock. A camera
+- **See the pet (push mode only):** turn on `MIRROR` and add an MQTT camera on `MIRROR_TOPIC` with
+  `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock. In view
+  mode the clock draws the pet itself and n8n has no frames to mirror, so the camera keeps its
+  last retained picture: leave the card out (or clear the retained `MIRROR_TOPIC`). A camera
   rather than an MQTT image entity: an image entity's state is its update time, so the recorder
   would store a row for every frame; a camera's stays `idle`.
 
@@ -129,7 +133,9 @@ The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`,
 | `STALE_AFTER_SEC` | `90` | push mode: red frame after this long without updates (0 = off) |
 | `MIRROR` | `false` | push mode: also publish each pushed frame as a PNG (256x64, one 8x8 dot per LED) |
 | `MIRROR_TOPIC` | `clawd/screen` | where the PNG goes, base64, retained |
-| `STATE_TOPIC` / `CMD_TOPIC` | `clawd/state` / `clawd/cmd` | state line out and commands in: the view app and Home Assistant. In view mode they must match the app's settings; in push mode the trigger's topic list must contain `CMD_TOPIC` |
+| `STATE_TOPIC` | `clawd/state` | state line out, for the view app and Home Assistant; in view mode it must match the app's setting |
+| `CMD_TOPIC` | `clawd/cmd` | view mode: the clock app's commands (must match its "Command topic"); they never switch apps |
+| `HA_TOPIC` | `clawd/ha` | Home Assistant's commands, both modes: apply the action and bring Clawd on screen. The MQTT trigger's topic list must contain it; may not equal `CMD_TOPIC` |
 
 A value n8n can't use falls back to its default; the engine's output lists it under `warnings`.
 
@@ -141,7 +147,7 @@ A value n8n can't use falls back to its default; the engine's output lists it un
   MQTT buttons  ────►│  (rules, state in    ├──► PUT  /api/v1/apps/active         (HA, events)
   + app on screen    │   workflow static    ├──► POST /api/v1/audio/play          (SOUND)
   HA webhook    ────►│   data)              ├──► POST /api/v1/notifications       (NOTIFY)
-  clawd/cmd     ────►│                      ├──► MQTT clawd/state (retained)      (view app, HA)
+  clawd/cmd, /ha ───►│                      ├──► MQTT clawd/state (retained)      (view app, HA)
                      └──────────────────────┘
 ```
 

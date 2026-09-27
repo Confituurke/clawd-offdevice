@@ -202,24 +202,45 @@ test('Home Assistant actions apply and bring Clawd on screen', () => {
   assert.equal(E.run({ event: 'action', name: 'dance' }, store, {}, T0 + 2000).ignore, true);
 });
 
-test('push: Home Assistant commands on the command topic apply and bring Clawd on screen', () => {
+test('Home Assistant commands on HA_TOPIC apply and bring Clawd on screen, in both modes', () => {
+  for (const MODE of ['push', 'view']) {
+    const store = {};
+    const cfg = { MODE };
+    E.run({ event: 'tick' }, store, cfg, T0);
+    Object.assign(store.clawd, { st: 1, ev: 1, h: 5000 });
+    const r = E.run({ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }, store, cfg, T0 + 1000);
+    assert.equal(r.ignore, false, MODE);
+    assert.equal(store.clawd.h, 9000, MODE);
+    assert.equal(r.switchTo, true, MODE);
+    assert.equal(E.run({ event: 'cmd', payload: '{"a":"clean"}', topic: 'clawd/ha' }, store, cfg, T0 + 2000).switchTo, true, MODE);
+    assert.equal(E.run({ event: 'cmd', payload: 'dance', topic: 'clawd/ha' }, store, cfg, T0 + 3000).ignore, true, MODE);
+  }
+  // A renamed topic follows the setting.
   const store = {};
-  E.run({ event: 'tick' }, store, {}, T0);
-  Object.assign(store.clawd, { st: 1, ev: 1, h: 5000 });
-  const r = E.run({ event: 'cmd', payload: 'feed' }, store, {}, T0 + 1000);
-  assert.equal(r.ignore, false);
-  assert.equal(store.clawd.h, 9000);
-  assert.equal(r.switchTo, true);
-  assert.equal(E.run({ event: 'cmd', payload: '{"a":"clean"}' }, store, {}, T0 + 2000).switchTo, true);
-  assert.equal(E.run({ event: 'cmd', payload: 'dance' }, store, {}, T0 + 3000).ignore, true);
+  E.run({ event: 'tick' }, store, { HA_TOPIC: 'home/pet' }, T0);
+  Object.assign(store.clawd, { st: 1, ev: 1 });
+  assert.equal(E.run({ event: 'cmd', payload: 'feed', topic: 'home/pet' }, store, { HA_TOPIC: 'home/pet' }, T0 + 1000).switchTo, true);
+  assert.equal(E.run({ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }, store, { HA_TOPIC: 'home/pet' }, T0 + 2000).switchTo, false);
 });
 
-test('view: device commands do not switch apps (only HA and big events do)', () => {
-  const store = {};
-  const cfg = { MODE: 'view' };
-  E.run({ event: 'tick' }, store, cfg, T0);
-  Object.assign(store.clawd, { st: 1, ev: 1, h: 5000 });
-  assert.equal(E.run({ event: 'cmd', payload: 'feed' }, store, cfg, T0 + 1000).switchTo, false);
+test('the clock\'s own commands on CMD_TOPIC apply but never switch apps', () => {
+  for (const MODE of ['push', 'view']) {
+    const store = {};
+    const cfg = { MODE };
+    E.run({ event: 'tick' }, store, cfg, T0);
+    Object.assign(store.clawd, { st: 1, ev: 1, h: 5000 });
+    const r = E.run({ event: 'cmd', payload: 'feed', topic: 'clawd/cmd' }, store, cfg, T0 + 1000);
+    assert.equal(store.clawd.h, 9000, MODE);
+    assert.equal(r.switchTo, false, MODE);
+    assert.equal(E.run({ event: 'cmd', payload: 'clean' }, store, cfg, T0 + 2000).switchTo, false, `${MODE}, no topic`);
+  }
+});
+
+test('HA_TOPIC may not equal CMD_TOPIC', () => {
+  const cfg = E.makeConfig({ HA_TOPIC: 'clawd/cmd' });
+  assert.ok(cfg.warnings.includes('HA_TOPIC'));
+  assert.equal(cfg.HA_TOPIC, 'clawd/ha');
+  assert.equal(E.makeConfig({ CMD_TOPIC: 'clawd/ha' }).HA_TOPIC, '', 'default taken by CMD_TOPIC: HA topic off');
 });
 
 test('push: the state line is published too, for Home Assistant', () => {
@@ -325,7 +346,7 @@ test('push: stats keep the turn open however long Clawd has already been on scre
         if (via === 'menu') {                                    // STATS highlighted, runs after the 2 s dwell
           Object.assign(st.clawd, { ui: 1, mi: 6, dwell: T0 + openAt - 2000 });
           r = E.run({ event: 'tick' }, st, {}, T0 + openAt);
-        } else r = E.run({ event: 'cmd', payload: 'stats' }, st, {}, T0 + openAt);
+        } else r = E.run({ event: 'cmd', payload: 'stats', topic: 'clawd/ha' }, st, {}, T0 + openAt);
         assert.equal(st.clawd.ui, 3, via);
         // A switch (fast:true) restarts the turn on the clock; a menu pick does not.
         const turnStart = r.switchTo ? openAt : 0;
@@ -341,7 +362,7 @@ test('push: stats keep the turn open however long Clawd has already been on scre
   E.run({ event: 'tick' }, store, {}, T0);
   Object.assign(store.clawd, { st: 1, ev: 1 });
   E.run({ event: 'active', app: 'Time', prefix: 'awtrixNG' }, store, {}, T0);
-  const r = E.run({ event: 'cmd', payload: 'stats' }, store, {}, T0 + 60000);
+  const r = E.run({ event: 'cmd', payload: 'stats', topic: 'clawd/ha' }, store, {}, T0 + 60000);
   assert.equal(r.switchTo, true);
   assert.equal(r.payload.durationMs, store.clawd.stat_ms + E.STATS_AFTER_MS);
 });

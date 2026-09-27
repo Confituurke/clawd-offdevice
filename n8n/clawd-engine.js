@@ -215,7 +215,7 @@ function freshState(gen, nowMs) {
     pp: 0, pt: 0, cf: 0,                    // poops, potty timer (s), "stat hit zero" flags
     ui: 0, mi: 0, dwell: 0, rp: 0,          // push-mode UI: 0 scene, 1 menu, 3 stats, 5 new-egg confirm
     ev_k: 0, ev_t0: 0, fx: 0, hits: 1,      // last effect id, its start (ms), effect counter, play hits
-    stat_open: 0, stat_ms: 8000,
+    stat_open: 0, stat_ms: 8000, stat_turn: 0,
     lastNotify: 0, decAcc: 0, aslast: null,
     last_ts: Math.floor((nowMs || Date.now()) / 1000),
     saved: 0, v: 2
@@ -354,8 +354,14 @@ function advanceTime(s, cfg, nowMs) {
 // and the push. No `repeat`: AWTRIX ends a page, and so the app's whole turn,
 // once its repeats are done, before the pet frame could arrive.
 // Without `repeat` the page no longer holds the turn open, and one pass takes
-// ~11 s against AWTRIX's default 7 s app time, so the page also asks for a
-// `durationMs` long enough for the pass plus a few seconds of the pet after.
+// ~11 s against AWTRIX's default 7 s app time, so the page asks for a longer
+// `durationMs`. Measured on the clock: AWTRIX compares the current page's
+// durationMs (or the global app time, if 0) with how long the app's *turn* has
+// run, not with how long the page has been up. So the page asks for the turn
+// so far (stat_turn) + the stats + STATS_AFTER_MS margin; a flat
+// stat_ms + margin cut STATS opened 12 s into a 30 s turn off after 3 s. When
+// the pet frame (no durationMs) replaces the page, the global time applies
+// again, so the pet only stays if the turn has time left.
 // `mode: "wrap"` is set explicitly so a different global scroll mode (bounce,
 // loop) cannot change the timing measured above.
 const STATS_HOLD_MS = 3500;
@@ -495,7 +501,7 @@ function render(s, cfg, t) {
     return withLifetime({
       text: statsText(s, cfg), textColor: '#F0E6D8',
       scroll: { mode: 'wrap', speed: 100, holdMs: STATS_HOLD_MS },
-      durationMs: (s.stat_ms || 8000) + STATS_AFTER_MS
+      durationMs: (s.stat_turn || 0) + (s.stat_ms || 8000) + STATS_AFTER_MS
     }, cfg);
   }
   const cv = new Canvas();
@@ -664,7 +670,7 @@ function run(input, store, rawCfg, nowMs) {
 
   if (!store.clawd) store.clawd = freshState(1, nowMs);
   const s = upgradeState(store.clawd, nowMs);
-  if (!store.dev) store.dev = { fg: null, lastPush: 0, sig: '', lastPub: 0, pubSig: '' };
+  if (!store.dev) store.dev = { fg: null, fgSince: 0, lastPush: 0, sig: '', lastPub: 0, pubSig: '' };
   const dev = store.dev;
 
   const out = {
@@ -680,7 +686,7 @@ function run(input, store, rawCfg, nowMs) {
   }
   if (cfg.MODE === 'view' && (ev === 'button' || ev === 'active')) { out.ignore = true; return out; }
 
-  const prev = { st: s.st, ev: s.ev, sk: s.sk, fx: s.fx };
+  const prev = { st: s.st, ev: s.ev, sk: s.sk, fx: s.fx, ui: s.ui };
   const before = significant(s, dev);
   let userAct = false;
 
@@ -691,7 +697,7 @@ function run(input, store, rawCfg, nowMs) {
     const wasFg = dev.fg;
     dev.fg = String(input.app || '') === cfg.APP_NAME;
     if (!dev.fg && s.ui !== 0) s.ui = 0;                  // Clawd left the screen: close menus
-    if (dev.fg && wasFg !== true) userAct = true;          // came on screen: send a fresh frame
+    if (dev.fg && wasFg !== true) { userAct = true; dev.fgSince = nowMs; } // came on screen: fresh frame, turn starts
   } else if (ev === 'button') {
     if (dev.fg !== true) { out.ignore = true; return out; } // only while Clawd is on screen
     onButton(s, input.btn, cfg, nowMs);
@@ -728,6 +734,9 @@ function run(input, store, rawCfg, nowMs) {
     const onScreen = dev.fg !== false;                     // unknown counts as on screen
     out.push = userAct || out.switchTo || onScreen || sig !== dev.sig || s.fx !== prev.fx ||
       nowMs - (dev.lastPush || 0) >= cfg.OFFSCREEN_REFRESH_SEC * 1000;
+    // STATS just opened: note how long Clawd's turn has already run (0 if
+    // Clawd is not on screen yet, e.g. a Home Assistant command switches to it).
+    if (s.ui === 3 && prev.ui !== 3) s.stat_turn = (dev.fg === true && dev.fgSince) ? Math.max(0, nowMs - dev.fgSince) : 0;
     if (out.push) {
       out.payload = render(s, cfg, nowMs);
       dev.lastPush = nowMs; dev.sig = sig;

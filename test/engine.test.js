@@ -307,6 +307,35 @@ test('push: stats scroll once and return to the pet within Clawd\'s turn', () =>
   assert.equal(store.clawd.ui, 0);
 });
 
+test('push: stats keep the turn open however long Clawd has already been on screen', () => {
+  // Measured on the clock (AWTRIX NG 1.1.2): a turn ends when the time since the
+  // app came on screen reaches the current page's durationMs, or the global app
+  // time when the page has none. Model that and check the whole pass stays visible.
+  const REAL_PX_S = 23;
+  for (const appMs of [7000, 30000]) {
+    for (const openAt of [0, 3000, 12000, 25000, 29000]) {
+      const store = {};
+      E.run({ event: 'tick' }, store, {}, T0);
+      Object.assign(store.clawd, { st: 1, ev: 1 });
+      E.run({ event: 'active', app: 'clawd', prefix: 'awtrixNG' }, store, {}, T0);         // turn starts at T0
+      const r = E.run({ event: 'cmd', payload: 'stats' }, store, {}, T0 + openAt);
+      if (openAt >= appMs) continue;                                                       // turn already over
+      const text = r.payload.text;
+      const passEnd = openAt + E.STATS_HOLD_MS + (text.length * 4 - 1) / REAL_PX_S * 1000;
+      const turnEnd = r.payload.durationMs;                                                // measured from turn start
+      assert.ok(turnEnd >= passEnd, `app ${appMs}, opened at ${openAt}: turn ends at ${turnEnd}, pass at ${Math.round(passEnd)}`);
+    }
+  }
+  // Opened from Home Assistant while another app shows: the switch starts a new turn.
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  Object.assign(store.clawd, { st: 1, ev: 1 });
+  E.run({ event: 'active', app: 'Time', prefix: 'awtrixNG' }, store, {}, T0);
+  const r = E.run({ event: 'cmd', payload: 'stats' }, store, {}, T0 + 60000);
+  assert.equal(r.switchTo, true);
+  assert.equal(r.payload.durationMs, store.clawd.stat_ms + E.STATS_AFTER_MS);
+});
+
 test('push: stats close after the pass and before a second one, whatever the tick phase', () => {
   // Measured on the clock: rests holdMs, scrolls at ~23 px/s (docs: 21), then
   // rests holdMs again at the start before scrolling a second time.

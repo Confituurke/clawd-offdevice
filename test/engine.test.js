@@ -575,7 +575,7 @@ test('settings: a change over MQTT is checked, kept and used, in both modes', ()
     assert.equal(r.config.topic, 'clawd/config'); assert.equal(r.config.retain, true);
     const eff = E.effectiveConfig(cfg, store);
     assert.ok(Math.abs(eff.STEP_SEC - 15.12) < 0.01, 'the new speed drives the decay');
-    assert.match(E.statsText(store.clawd, eff), /^Krabbie  AGE/, 'the new name is used');
+    assert.match(E.statsText(store.clawd, eff), /^Krabbie  EGG  AGE/, 'the new name is used');
   }
 });
 
@@ -799,6 +799,8 @@ test('old age: shown as a spirit, published in field 22, switches Clawd on scree
 
 test('elder and legend: stats name the stage, the old save format upgrades', () => {
   const cfg = E.makeConfig({});
+  assert.match(E.statsText(agedPet({ ev: 1 }), cfg), /^Clawd  BABY  AGE/);
+  assert.match(E.statsText(agedPet({ ev: 4 }), cfg), /^Clawd  ADULT  AGE/);
   assert.match(E.statsText(agedPet({ ev: 5 }), cfg), /^Clawd  ELDER  AGE/);
   assert.match(E.statsText(agedPet({ ev: 6 }), cfg), /^Clawd  LEGEND  AGE/);
   const old = { st: 1, ev: 4, va: 0, h: 5000, ha: 5000, en: 5000, cl: 5000, hp: 10000, age: 300000, gen: 1, cs: 250 };

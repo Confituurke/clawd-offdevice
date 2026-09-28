@@ -336,7 +336,7 @@ class Clawd
       end
     elif i == 6
       var a = s[15]
-      self.b = self.nm + (s[2] == 6 ? "  LEGEND" : (s[2] == 5 ? "  ELDER" : "")) + "  AGE " + str(a / 86400) + "d" + str(a % 86400 / 3600) + "h  GEN " + str(s[13]) + "  CARE " + str(s[14]) + "  HP " + str(s[8] / 100) + "%"
+      self.b = self.nm + "  " + string.split("EGG BABY CHILD TEEN ADULT ELDER LEGEND", " ")[s[2]] + "  AGE " + str(a / 86400) + "d" + str(a % 86400 / 3600) + "h  GEN " + str(s[13]) + "  CARE " + str(s[14]) + "  HP " + str(s[8] / 100) + "%"
       self.c = -1
       self.u = 3
     elif i == 5

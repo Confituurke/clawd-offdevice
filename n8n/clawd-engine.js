@@ -480,8 +480,8 @@ function statsScrollMs(text) { return STATS_HOLD_MS + Math.ceil((text.length * 4
 
 function statsText(s, cfg) {
   const a = s.age;
-  const title = s.ev === 6 ? '  LEGEND' : s.ev === 5 ? '  ELDER' : '';
-  return `${cfg.PET_NAME}${title}  AGE ${Math.floor(a / 86400)}d${Math.floor((a % 86400) / 3600)}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`;
+  const stage = ['EGG', 'BABY', 'CHILD', 'TEEN', 'ADULT', 'ELDER', 'LEGEND'][s.ev] || '';
+  return `${cfg.PET_NAME}  ${stage}  AGE ${Math.floor(a / 86400)}d${Math.floor((a % 86400) / 3600)}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`;
 }
 
 // Apply one action. `opt.hits` (0-3) is a Star Catch result from the device;

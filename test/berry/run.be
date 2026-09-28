@@ -182,17 +182,17 @@ check(app.s[1] == 0, "starts as an egg")
 frame(app, 20)
 check(lit() > 10 && px(0, 7) != 0, "egg and hatch progress drawn")
 var core = app.core
-check(core.st == 18 * 2520, "18 h -> 45360 ms per step")
+check(core.st == 12 * 2520, "12 h -> 30240 ms per step")
 
 # hatch: 30 min of loop()
 for i : 1 .. 1800 advance(1000) app.loop() end
 check(app.s[1] == 1 && app.s[2] == 1, "hatched after 30 min")
 check(rotation.shown >= 1, "hatching brings Clawd on screen")
 
-# one hour awake: 79 decay steps, hunger -553
+# one hour awake: 119 decay steps, hunger -833
 var h0 = app.s[4]
 for i : 1 .. 3600 advance(1000) app.loop() end
-check(h0 - app.s[4] == 79 * 7, "hunger after 1 h: " + str(h0 - app.s[4]))
+check(h0 - app.s[4] == 119 * 7, "hunger after 1 h: " + str(h0 - app.s[4]))
 
 # feed through the menu
 press(app)

@@ -2,7 +2,7 @@
 # @desc    Clawd's rules, for running the pet entirely on the clock (Brain = device in the Clawd app). No n8n needed.
 # @author  Blueforcer (original Clawd), clawd-offdevice
 # @version 2.0
-# @config  hunger number "Hours until hungry" default=18 min=1 max=240 unit=h help="Awake, full to empty. The original was about 4"
+# @config  hunger number "Hours until hungry" default=12 min=1 max=240 unit=h help="Awake, full to empty. The original was about 4"
 # @config  egg    number "Egg hatches after"  default=30 min=1 max=1440 unit=min
 # @config  child  number "Child at"           default=12 min=0 max=8760 unit=h
 # @config  teen   number "Teen at"            default=36 min=0 max=8760 unit=h
@@ -19,7 +19,7 @@ import math
 
 var m = module("clawdcore")
 # number settings may arrive as reals; everything below works in whole numbers
-m.st = int(store.get("hunger") * 2520)   # ms per decay step (18 h -> 45360 ms)
+m.st = int(store.get("hunger") * 2520)   # ms per decay step (12 h -> 30240 ms)
 m.eg = int(store.get("egg") * 60)
 m.ag = [int(store.get("child") * 3600), int(store.get("teen") * 3600), int(store.get("adult") * 3600)]
 m.hr = [int(store.get("sfrom")), int(store.get("sto")), int(store.get("nfrom")), int(store.get("nto"))]

@@ -28,7 +28,7 @@ const DEFAULTS = {
   APP_NAME: 'clawd',          // pushed app name (push) / script name (view)
   PET_NAME: 'Clawd',
   TZ: 'Europe/Brussels',      // any IANA time zone
-  HUNGER_EMPTY_HOURS: 18,     // awake, full -> empty. The original was ~4 h.
+  HUNGER_EMPTY_HOURS: 12,     // awake, full -> empty. The original was ~4 h: an unfed night could starve it.
   EGG_HATCH_MIN: 30,
   CHILD_AT_HOURS: 12,
   TEEN_AT_HOURS: 36,

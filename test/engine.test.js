@@ -43,18 +43,18 @@ function assertValidPayload(p) {
   }
 }
 
-test('config: defaults derive an ~45 s step for 18 h', () => {
+test('config: defaults derive an ~30 s step for 12 h', () => {
   const cfg = E.makeConfig({});
-  assert.equal(cfg.HUNGER_EMPTY_HOURS, 18);
+  assert.equal(cfg.HUNGER_EMPTY_HOURS, 12);
   assert.equal(cfg.TZ, 'Europe/Brussels');
-  assert.ok(Math.abs(cfg.STEP_SEC - 45.36) < 0.01);
+  assert.ok(Math.abs(cfg.STEP_SEC - 30.24) < 0.01);
   assert.deepEqual(cfg.warnings, []);
 });
 
 test('config: bad values fall back and are reported', () => {
   const cfg = E.makeConfig({ TZ: 'Mars/Olympus', HUNGER_EMPTY_HOURS: 'lots', MODE: 'x', SOUND: 'yes', AWTRIX_HOST: 'http://10.0.0.5/' });
   assert.equal(cfg.TZ, 'Europe/Brussels');
-  assert.equal(cfg.HUNGER_EMPTY_HOURS, 18);
+  assert.equal(cfg.HUNGER_EMPTY_HOURS, 12);
   assert.equal(cfg.MODE, 'push');
   assert.equal(cfg.SOUND, true);
   assert.equal(cfg.AWTRIX_HOST, '10.0.0.5');
@@ -70,7 +70,7 @@ test('time zone: hours follow the configured zone, including DST', () => {
   assert.equal(E.inWindow(9, 8, 17), true);
 });
 
-test('timing: hunger drains from full to empty in ~18 h while awake', () => {
+test('timing: hunger drains from full to empty in ~12 h while awake', () => {
   const cfg = E.makeConfig({ SLEEP_FROM: 0, SLEEP_TO: 0 });       // no auto-sleep
   const s = alivePet(T0);
   noRandom(null, () => {
@@ -81,8 +81,21 @@ test('timing: hunger drains from full to empty in ~18 h while awake', () => {
       if (s.h === 0 && emptyAt === null) emptyAt = t;
     }
     const hours = (emptyAt - T0) / H;
-    assert.ok(hours > 17.8 && hours < 18.2, `hunger empty after ${hours.toFixed(2)} h`);
+    assert.ok(hours > 11.8 && hours < 12.2, `hunger empty after ${hours.toFixed(2)} h`);
   });
+});
+
+test('timing: at the default speed a pet in bed at 60% hunger still has food at 08:00', () => {
+  const cfg = E.makeConfig({ TZ: 'Europe/Brussels' });            // sleeps 22-8
+  const bed = Date.parse('2026-09-28T22:00:00+02:00');
+  const s = alivePet(bed);
+  s.h = 6000;
+  noRandom(null, () => {
+    for (let t = bed + 60000; t < bed + 10 * H; t += 60000) E.advanceTime(s, cfg, t);
+  });
+  assert.equal(s.sl, 1, 'asleep all night');
+  assert.ok(s.h > 1500, `hunger at 07:59: ${s.h}`);
+  assert.equal(s.hp, 10000, 'no damage overnight');
 });
 
 test('timing: the original speed is reproduced with HUNGER_EMPTY_HOURS = 3.97', () => {

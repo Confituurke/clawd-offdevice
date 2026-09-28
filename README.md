@@ -34,7 +34,7 @@ than the original, device mode about 30% more (details in
   opens Clawd's menu, and physical buttons never switch apps (left/right used to be yanked back
   to Clawd). Home Assistant buttons do still bring Clawd on screen.
 - **Stats show up.** The payload used `"scroll": true`, which AWTRIX NG rejects.
-- **One speed setting.** `HUNGER_EMPTY_HOURS` (default **18 h**, the original is ~4 h) drives
+- **One speed setting.** `HUNGER_EMPTY_HOURS` (default **12 h**, the original is ~4 h) drives
   decay, the potty timer and the offline catch-up, which now always runs slower than live play.
   Growing up still takes 12 / 36 / 72 h, each its own setting.
 - **Your time zone.** Sleep and night use `TZ` (default `Europe/Brussels`, any IANA zone), not
@@ -127,7 +127,7 @@ The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`,
 | `APP_NAME` | `clawd` | pushed app name, or the name of the view script |
 | `PET_NAME` | `Clawd` | up to 12 characters |
 | `TZ` | `Europe/Brussels` | any IANA zone, e.g. `America/New_York` |
-| `HUNGER_EMPTY_HOURS` | `18` | awake, full to empty; `3.97` is the original speed |
+| `HUNGER_EMPTY_HOURS` | `12` | awake, full to empty; `3.97` is the original speed. At 12 h a pet that goes to bed (22-8) at 60% hunger still has food left in the morning, and ~4 feeds a day keep it fed; at the original speed an unfed night starves it |
 | `EGG_HATCH_MIN` | `30` | |
 | `CHILD_AT_HOURS` / `TEEN_AT_HOURS` / `ADULT_AT_HOURS` | `12` / `36` / `72` | |
 | `SLEEP_FROM` / `SLEEP_TO` | `22` / `8` | auto-sleep, local hours |

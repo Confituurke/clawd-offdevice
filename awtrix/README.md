@@ -55,6 +55,7 @@ whenever something visible changes, and at least once a minute:
 | | | | 19 | n8n's clock (epoch seconds) |
 | | | | 20, 21 | egg warmth and hatch time (seconds) |
 | | | | 22 | passed away of old age (0/1); newer than the rest - an app reading 22 fields treats it as 0 |
+| | | | 23, 24 | seconds until what comes next (-1: nothing), and what: 1-6 the next stage (baby ... legend), 9 passing away of old age. For Home Assistant; the app ignores them |
 
 The app sends actions to the command topic as `{"a":"feed"}`: `feed`, `play`
 (with `"hits":0-3` after Star Catch), `clean`, `med`, `sleep`, `wake`, `warm`

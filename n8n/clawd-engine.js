@@ -734,7 +734,26 @@ function animatedUntil(s, nowMs) {
 // ---- view mode ----------------------------------------------------------------
 // The state the device script needs, as one short CSV line (cheap to parse in
 // Berry). Field order is part of the protocol; see awtrix/README.md.
+// What comes next and in how many seconds: [seconds, what], what = the next
+// evolution stage (1 baby ... 6 legend) or 9 for passing away of old age;
+// [-1, 0] when nothing is coming (dead). A happy elder's legend counts only
+// while it stays well raised, so its countdown assumes it does.
+function nextStep(s, cfg) {
+  if (s.st === 0) return [Math.max(0, Math.ceil(cfg.EGG_HATCH_MIN * 60 - s.age - s.warm)), 1];
+  if (s.st !== 1) return [-1, 0];
+  const at = [0, cfg.CHILD_AT_HOURS, cfg.TEEN_AT_HOURS, cfg.ADULT_AT_HOURS];
+  if (s.ev >= 1 && s.ev <= 3) return [Math.max(0, Math.ceil(at[s.ev] * 3600 - s.age)), s.ev + 1];
+  if (s.ev === 4 && s.va !== 2) return [Math.max(0, Math.ceil(cfg.ELDER_AT_HOURS * 3600 - s.age)), 5];
+  const oldAge = Math.max(0, Math.ceil(lifeEnd(s, cfg) - s.age));
+  if (s.ev === 5 && s.va === 0) {
+    const legend = Math.max(0, Math.ceil(cfg.LEGEND_AFTER_HOURS * 3600 - (s.lgh || 0)));
+    if (legend < oldAge) return [legend, 6];
+  }
+  return [oldAge, 9];
+}
+
 function stateLine(s, cfg, nowMs) {
+  const nx = nextStep(s, cfg);
   const night = isNight(s, cfg, nowMs) ? 1 : 0;
   return [
     2,                                   // protocol version
@@ -746,7 +765,8 @@ function stateLine(s, cfg, nowMs) {
     Math.floor(nowMs / 1000),
     Math.floor(s.warm),
     Math.floor(cfg.EGG_HATCH_MIN * 60),
-    s.old ? 1 : 0                        // 22: passed away of old age (added later; older apps read 0-21)
+    s.old ? 1 : 0,                       // 22: passed away of old age (added later; older apps read 0-21)
+    nx[0], nx[1]                         // 23, 24: seconds until what comes next, and what (see nextStep)
   ].join(',');
 }
 
@@ -992,7 +1012,7 @@ function run(input, store, rawCfg, nowMs) {
   {
     const line = stateLine(s, cfg, nowMs);
     const f = line.split(',');
-    const psig = f.slice(0, 15).concat(f.slice(16, 19), f.slice(20)).join(',');  // all but age and clock
+    const psig = f.slice(0, 15).concat(f.slice(16, 19), f.slice(20, 23), f.slice(24)).join(',');  // all but age, clock and countdown
     if (psig !== dev.pubSig || nowMs - (dev.lastPub || 0) >= 60000 || userAct) {
       out.publish = { topic: cfg.STATE_TOPIC, message: line, retain: true };
       dev.pubSig = psig; dev.lastPub = nowMs;
@@ -1065,7 +1085,7 @@ function runN8n(input, staticData, rawCfg, nowMs) {
 
 const ClawdEngine = {
   ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, STATS_AFTER_MS, statsScrollMs,
-  PRESETS, PRESET_KEYS, lifeEnd, makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
+  PRESETS, PRESET_KEYS, lifeEnd, nextStep, makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
   checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
   stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n,
   LIVE_SETTINGS, LIVE_KEYS, NUM_RANGES, effectiveConfig, applySettings, settingsMessage, deviceSync, devicePatch, parseDeviceReport

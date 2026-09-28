@@ -47,6 +47,10 @@ views:
           - type: tile
             entity: sensor.clawd_age
           - type: tile
+            entity: sensor.clawd_next_stage
+          - type: tile
+            entity: sensor.clawd_next_stage_in
+          - type: tile
             entity: sensor.clawd_care_score
       - type: grid
         cards:

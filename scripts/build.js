@@ -465,6 +465,13 @@ function haDiscovery() {
     ['energy', 'Energy', 'mdi:lightning-bolt', 6], ['hygiene', 'Hygiene', 'mdi:shower', 7], ['health', 'Health', 'mdi:heart-pulse', 8]]) {
     sensor(id, name, icon, pct(i), { unit_of_measurement: '%', state_class: 'measurement' });
   }
+  // What comes next, worked out by n8n from the real settings (state line fields 23 and 24).
+  sensor('next_stage', 'Next stage in', 'mdi:timer-sand',
+    "{% set f = value.split(',') %}{{ ((f[23] | int) / 3600) | round(1) if f | length > 24 and (f[23] | int) >= 0 else 'unknown' }}",
+    { unit_of_measurement: 'h' });
+  sensor('next_stage_name', 'Next stage', 'mdi:arrow-right-bold',
+    "{% set f = value.split(',') %}{% set n = (f[24] | int) if f | length > 24 else 0 %}" +
+    "{{ {1: 'Baby', 2: 'Child', 3: 'Teen', 4: 'Adult', 5: 'Elder', 6: 'Legend', 9: 'Passes away'}.get(n, 'None') }}");
   sensor('age', 'Age', 'mdi:cake-variant', "{% set f = value.split(',') %}{{ ((f[15] | int) / 3600) | round(1) }}", { unit_of_measurement: 'h', state_class: 'measurement' });
   sensor('poop', 'Poop', 'mdi:emoticon-poop', field(9));
   sensor('care', 'Care score', 'mdi:hand-heart', field(14), { state_class: 'measurement' });

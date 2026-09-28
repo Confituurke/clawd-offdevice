@@ -134,8 +134,8 @@ shows up everywhere:
 The easy way is the one in the README: publish
 [`homeassistant/clawd-discovery.json`](../homeassistant/clawd-discovery.json) and add
 [`homeassistant/dashboard.yaml`](../homeassistant/dashboard.yaml). The discovery message creates a
-**Clawd** device with sensors (stage - egg to legend, food, happiness, energy, hygiene, health,
-poop, age, care score, generation, asleep, sick), buttons (feed, play, clean, medicine, sleep, wake
+**Clawd** device with sensors (stage - egg to legend, next stage and how many hours until it, food,
+happiness, energy, hygiene, health, poop, age, care score, generation, asleep, sick), buttons (feed, play, clean, medicine, sleep, wake
 up, show stats, new egg), the screen camera and the settings controls (a Difficulty dropdown and
 one control per setting). The demo dashboard has two pages: **Clawd** (the pet) and **Settings**
 (*Settings* and *Advanced Settings*). The buttons publish to `clawd/ha`,

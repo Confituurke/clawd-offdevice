@@ -70,6 +70,23 @@
       "unit_of_measurement": "%",
       "state_class": "measurement"
     },
+    "next_stage": {
+      "p": "sensor",
+      "name": "Next stage in",
+      "unique_id": "clawd_next_stage",
+      "icon": "mdi:timer-sand",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[23] | int) / 3600) | round(1) if f | length > 24 and (f[23] | int) >= 0 else 'unknown' }}",
+      "expire_after": 180,
+      "unit_of_measurement": "h"
+    },
+    "next_stage_name": {
+      "p": "sensor",
+      "name": "Next stage",
+      "unique_id": "clawd_next_stage_name",
+      "icon": "mdi:arrow-right-bold",
+      "value_template": "{% set f = value.split(',') %}{% set n = (f[24] | int) if f | length > 24 else 0 %}{{ {1: 'Baby', 2: 'Child', 3: 'Teen', 4: 'Adult', 5: 'Elder', 6: 'Legend', 9: 'Passes away'}.get(n, 'None') }}",
+      "expire_after": 180
+    },
     "age": {
       "p": "sensor",
       "name": "Age",

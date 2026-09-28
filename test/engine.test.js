@@ -477,7 +477,7 @@ test('view: device commands apply, including a Star Catch result', () => {
   assert.equal(r.switchTo, false);
   assert.equal(r.publish.topic, 'clawd/state');
   assert.equal(r.publish.retain, true);
-  assert.equal(r.publish.message.split(',').length, 23);
+  assert.equal(r.publish.message.split(',').length, 25);
   assert.equal(r.publish.message.split(',')[22], '0', 'field 22: not passed away of old age');
   assert.equal(E.run({ event: 'cmd', payload: '{"a":"rm -rf"}' }, store, cfg, T0 + 2000).ignore, true);
   assert.equal(E.run({ event: 'cmd', payload: 'not json {' }, store, cfg, T0 + 2000).ignore, true);
@@ -825,4 +825,29 @@ test('elder and legend: stats name the stage, the old save format upgrades', () 
   const old = { st: 1, ev: 4, va: 0, h: 5000, ha: 5000, en: 5000, cl: 5000, hp: 10000, age: 300000, gen: 1, cs: 250 };
   E.upgradeState(old, T0);
   assert.deepEqual([old.eld, old.lgd, old.lgh, old.old], [0, 0, 0, 0]);
+});
+
+test('next stage: n8n works out what comes next and when, from the settings in use', () => {
+  const cfg = E.makeConfig({});
+  const eggS = Object.assign(E.freshState(1, T0), { age: 600, warm: 120 });
+  assert.deepEqual(E.nextStep(eggS, cfg), [30 * 60 - 720, 1], 'egg: hatches');
+  assert.deepEqual(E.nextStep(agedPet({ ev: 2, age: 20 * 3600 }), cfg), [16 * 3600, 3], 'child: teen at 36 h');
+  assert.deepEqual(E.nextStep(agedPet({ ev: 4, va: 1, age: 100 * 3600 }), cfg), [68 * 3600, 5], 'adult: elder at 168 h');
+  assert.deepEqual(E.nextStep(agedPet({ ev: 4, va: 2, age: 100 * 3600 }), cfg), [116 * 3600, 9], 'grumpy adult: passes away at 168 + 48 h');
+  assert.deepEqual(E.nextStep(agedPet({ ev: 5, va: 1, eld: 168 * 3600, age: 170 * 3600 }), cfg), [94 * 3600, 9], 'normal elder: old age');
+  assert.deepEqual(E.nextStep(agedPet({ ev: 5, va: 0, eld: 168 * 3600, age: 170 * 3600, lgh: 3600 }), cfg), [47 * 3600, 6], 'happy elder: legend first');
+  assert.deepEqual(E.nextStep(agedPet({ ev: 6, va: 0, lgd: 200 * 3600, age: 210 * 3600 }), cfg), [134 * 3600, 9], 'legend: old age');
+  assert.deepEqual(E.nextStep(agedPet({ st: 2 }), cfg), [-1, 0], 'dead: nothing');
+  const fast = E.makeConfig({ CHILD_AT_HOURS: 1, TEEN_AT_HOURS: 1, ADULT_AT_HOURS: 1, ELDER_AT_HOURS: 1 });
+  assert.deepEqual(E.nextStep(agedPet({ ev: 4, va: 0, age: 1800 }), fast), [1800, 5], 'follows changed settings');
+  const line = E.stateLine(agedPet({ ev: 4, va: 1, age: 100 * 3600 }), cfg, T0).split(',');
+  assert.deepEqual([line[23], line[24]], [String(68 * 3600), '5'], 'fields 23 and 24');
+});
+
+test('next stage: the countdown alone does not republish the state line', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  Object.assign(store.clawd, { st: 1, ev: 2, age: 20 * 3600 });
+  E.run({ event: 'tick' }, store, {}, T0 + 2000);
+  assert.equal(E.run({ event: 'tick' }, store, {}, T0 + 20000).publish, null, 'seconds ticking down is not a change');
 });

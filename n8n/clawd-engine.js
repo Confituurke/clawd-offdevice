@@ -27,7 +27,7 @@ const DEFAULTS = {
   MQTT_PREFIX: 'awtrixNG',    // AWTRIX NG's MQTT prefix
   APP_NAME: 'clawd',          // pushed app name (push) / script name (view)
   PET_NAME: 'Clawd',
-  TZ: 'Europe/Brussels',      // any IANA time zone
+  TZ: '',                     // any IANA time zone; empty: n8n's own time zone
   HUNGER_EMPTY_HOURS: 12,     // awake, full -> empty. The original was ~4 h: an unfed night could starve it.
   EGG_HATCH_MIN: 30,
   CHILD_AT_HOURS: 12,
@@ -225,8 +225,9 @@ function makeConfig(raw) {
   return cfg;
 }
 
-// Local hour of `ms` in the configured zone (0-23).
+// Local hour of `ms` in the configured zone (0-23); no zone: the local clock.
 function hourIn(tz, ms) {
+  if (!tz) return new Date(ms).getHours();
   try {
     const f = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: tz });
     const h = parseInt(f.format(new Date(ms)), 10);
@@ -713,7 +714,7 @@ function applySettings(payload, store, raw) {
   for (const [k, v] of Object.entries(o)) {
     if (k === 'reset') continue;
     if (!LIVE_KEYS.includes(k)) { res.rejected.push(k); continue; }
-    if (v === null) { delete store.cfg[k]; res.accepted.push(k); continue; }
+    if (v === null || (k === 'TZ' && String(v).trim() === '')) { delete store.cfg[k]; res.accepted.push(k); continue; }
     want[k] = v;
   }
   const trial = makeConfig(Object.assign({}, raw || {}, store.cfg, want));
@@ -784,7 +785,7 @@ function parseDeviceReport(raw) {
 //         { event: 'action', name }                                  (Home Assistant webhook)
 //         { event: 'cmd', payload, topic }   (MQTT: CMD_TOPIC from the view app, HA_TOPIC from Home Assistant)
 // store:  a persistent object (n8n workflow static data)
-// Returns what the workflow should do; see README "How the workflow uses the result".
+// Returns what the workflow should do (see docs/REFERENCE.md, "How it works").
 function run(input, store, rawCfg, nowMs) {
   nowMs = nowMs || Date.now();
   input = input || { event: 'tick' };

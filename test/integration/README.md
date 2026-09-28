@@ -7,7 +7,7 @@ They are not part of `npm test` because they need n8n installed.
 ```bash
 cd test/integration
 npm install --no-save n8n aedes mqtt        # n8n needs the Node version it asks for (2.x: Node 24)
-export N8N_USER_FOLDER=$PWD/tmp/n8n N8N_ENCRYPTION_KEY=test-key TZ=Europe/Brussels GENERIC_TIMEZONE=Europe/Brussels
+export N8N_USER_FOLDER=$PWD/tmp/n8n N8N_ENCRYPTION_KEY=test-key TZ=Europe/Berlin GENERIC_TIMEZONE=Europe/Berlin
 node mock-awtrix.js & node broker.js &
 node prepare.js                             # tmp/wf-push.json, tmp/wf-view.json, tmp/creds.json
 npx n8n import:credentials --input=tmp/creds.json

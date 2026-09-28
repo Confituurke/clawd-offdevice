@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const E = require('../n8n/clawd-engine.js');
 
-// 2026-09-27 10:00 Europe/Brussels (CEST, UTC+2) = 08:00 UTC
+// 2026-09-27 10:00 Europe/Berlin (CEST, UTC+2) = 08:00 UTC
 const T0 = Date.UTC(2026, 8, 27, 8, 0, 0);
 const H = 3600 * 1000;
 
@@ -46,14 +46,14 @@ function assertValidPayload(p) {
 test('config: defaults derive an ~30 s step for 12 h', () => {
   const cfg = E.makeConfig({});
   assert.equal(cfg.HUNGER_EMPTY_HOURS, 12);
-  assert.equal(cfg.TZ, 'Europe/Brussels');
+  assert.equal(cfg.TZ, '', 'no zone: n8n\'s own (the n8n wrapper fills it in)');
   assert.ok(Math.abs(cfg.STEP_SEC - 30.24) < 0.01);
   assert.deepEqual(cfg.warnings, []);
 });
 
 test('config: bad values fall back and are reported', () => {
   const cfg = E.makeConfig({ TZ: 'Mars/Olympus', HUNGER_EMPTY_HOURS: 'lots', MODE: 'x', SOUND: 'yes', AWTRIX_HOST: 'http://10.0.0.5/' });
-  assert.equal(cfg.TZ, 'Europe/Brussels');
+  assert.equal(cfg.TZ, '');
   assert.equal(cfg.HUNGER_EMPTY_HOURS, 12);
   assert.equal(cfg.MODE, 'push');
   assert.equal(cfg.SOUND, true);
@@ -62,8 +62,8 @@ test('config: bad values fall back and are reported', () => {
 });
 
 test('time zone: hours follow the configured zone, including DST', () => {
-  assert.equal(E.hourIn('Europe/Brussels', Date.UTC(2026, 8, 27, 20, 30)), 22);   // summer, UTC+2
-  assert.equal(E.hourIn('Europe/Brussels', Date.UTC(2026, 0, 15, 21, 30)), 22);   // winter, UTC+1
+  assert.equal(E.hourIn('Europe/Berlin', Date.UTC(2026, 8, 27, 20, 30)), 22);   // summer, UTC+2
+  assert.equal(E.hourIn('Europe/Berlin', Date.UTC(2026, 0, 15, 21, 30)), 22);   // winter, UTC+1
   assert.equal(E.hourIn('America/New_York', Date.UTC(2026, 0, 15, 21, 30)), 16);
   assert.equal(E.inWindow(23, 22, 8), true);
   assert.equal(E.inWindow(12, 22, 8), false);
@@ -86,7 +86,7 @@ test('timing: hunger drains from full to empty in ~12 h while awake', () => {
 });
 
 test('timing: at the default speed a pet in bed at 60% hunger still has food at 08:00', () => {
-  const cfg = E.makeConfig({ TZ: 'Europe/Brussels' });            // sleeps 22-8
+  const cfg = E.makeConfig({ TZ: 'Europe/Berlin' });            // sleeps 22-8
   const bed = Date.parse('2026-09-28T22:00:00+02:00');
   const s = alivePet(bed);
   s.h = 6000;
@@ -119,9 +119,9 @@ test('timing: catch-up after an outage runs at 30% of live speed, never faster',
 test('sleep: auto-sleep uses the configured zone', () => {
   const cfg = E.makeConfig({});
   const s = alivePet(T0);
-  E.advanceTime(s, cfg, T0 + 2000);                                   // 10:00 Brussels
+  E.advanceTime(s, cfg, T0 + 2000);                                   // 10:00 Berlin
   assert.equal(s.sl, 0);
-  const late = Date.UTC(2026, 8, 27, 20, 30);                         // 22:30 Brussels
+  const late = Date.UTC(2026, 8, 27, 20, 30);                         // 22:30 Berlin
   s.last_ts = Math.floor(late / 1000) - 2;
   E.advanceTime(s, cfg, late);
   assert.equal(s.sl, 1);
@@ -665,4 +665,25 @@ test('view: the clock app\'s sound and name follow the settings, and a change ma
   const push = {};
   E.run({ event: 'tick' }, push, {}, T0);
   assert.equal(E.run(rep(true, 'X'), push, {}, T0 + 1000).ignore, true, 'push mode has no clock app');
+});
+
+test('time zone: empty means the local clock, and clearing it over MQTT goes back to that', () => {
+  assert.equal(E.hourIn('', Date.UTC(2026, 8, 27, 20, 30)), new Date(Date.UTC(2026, 8, 27, 20, 30)).getHours());
+  const store = {};
+  E.run({ event: 'tick' }, store, { TZ: 'Asia/Tokyo' }, T0);
+  E.run(setMsg({ TZ: 'America/New_York' }), store, { TZ: 'Asia/Tokyo' }, T0 + 1000);
+  const r = E.run(setMsg({ TZ: '' }), store, { TZ: 'Asia/Tokyo' }, T0 + 2000);
+  assert.equal(JSON.parse(r.config.message).TZ, 'Asia/Tokyo', 'blank clears the change');
+});
+
+test('n8n wrapper: without a TZ setting the pet uses n8n\'s time zone ($now.zoneName)', () => {
+  const wf = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'n8n', 'clawd-workflow-view.json'), 'utf8'));
+  const js = wf.nodes.find((n) => n.name === 'Clawd Engine').parameters.jsCode;
+  const vm = require('vm');
+  const sd = {};
+  const ctx = { $input: { all: () => [{ json: { event: 'tick', cfg: { MODE: 'view', TZ: '' } } }] }, $getWorkflowStaticData: () => sd,
+    $now: { zoneName: 'Pacific/Auckland' }, Intl, Date, Math, JSON, String, Number, Object, Array, Map, Set, parseInt, parseFloat, module: { exports: {} } };
+  vm.createContext(ctx);
+  const out = vm.runInContext(`(function(){${js}\n})()`, ctx);
+  assert.equal(JSON.parse(out[0].json.config.message).TZ, 'Pacific/Auckland');
 });

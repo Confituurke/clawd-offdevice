@@ -1,0 +1,134 @@
+# Demo dashboard for Clawd (push or view mode).
+#
+# Needs the "Clawd" device from clawd-discovery.json (see README, "Home Assistant").
+# Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
+# pencil icon > three dots > "Raw configuration editor", replace everything with this file.
+#
+# The screen card only shows a picture once the mirror is on (README, "See the pet").
+views:
+  - title: Clawd
+    path: clawd
+    icon: mdi:paw
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Clawd
+            icon: mdi:paw
+            badges:
+              - type: entity
+                entity: sensor.clawd_stage
+              - type: entity
+                entity: binary_sensor.clawd_asleep
+              - type: entity
+                entity: binary_sensor.clawd_sick
+          - type: picture-entity
+            entity: camera.clawd_screen
+            camera_view: live
+            show_name: false
+            show_state: false
+            tap_action:
+              action: none
+          - type: tile
+            entity: sensor.clawd_food
+          - type: tile
+            entity: sensor.clawd_happiness
+          - type: tile
+            entity: sensor.clawd_energy
+          - type: tile
+            entity: sensor.clawd_hygiene
+          - type: tile
+            entity: sensor.clawd_health
+          - type: tile
+            entity: sensor.clawd_poop
+          - type: tile
+            entity: sensor.clawd_age
+          - type: tile
+            entity: sensor.clawd_care_score
+      - type: grid
+        cards:
+          - type: heading
+            heading: Take care
+            icon: mdi:hand-heart
+          - type: button
+            entity: button.clawd_feed
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_feed
+          - type: button
+            entity: button.clawd_play
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_play
+          - type: button
+            entity: button.clawd_clean
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_clean
+          - type: button
+            entity: button.clawd_medicine
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_medicine
+          - type: button
+            entity: button.clawd_sleep
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_sleep
+          - type: button
+            entity: button.clawd_wake_up
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_wake_up
+          - type: button
+            entity: button.clawd_show_stats
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_show_stats
+          - type: button
+            entity: button.clawd_new_egg
+            name: New egg (when dead)
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.clawd_new_egg
+      - type: grid
+        cards:
+          - type: heading
+            heading: Settings
+            icon: mdi:cog
+          - type: entities
+            entities:
+              - text.clawd_pet_name
+              - switch.clawd_sound
+              - switch.clawd_notifications
+              - switch.clawd_show_on_big_events
+              - switch.clawd_screen_mirror
+              - number.clawd_hunger_empties_in
+              - number.clawd_egg_hatches_after
+              - number.clawd_child_at_age
+              - number.clawd_teen_at_age
+              - number.clawd_adult_at_age
+              - number.clawd_sleeps_from
+              - number.clawd_sleeps_until
+              - number.clawd_night_scene_from
+              - number.clawd_night_scene_until
+              - text.clawd_time_zone
+              - button.clawd_reset_settings

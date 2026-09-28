@@ -2,233 +2,133 @@
 
 *A tiny crab. A cry for help. A shortage of RAM.*
 
-Clawd is a virtual pet that lives on your [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng)
-matrix display — hatch it from an egg, feed it, play with it, keep it clean, watch it grow through
-four whole life stages, and (if you neglect it, you monster) bury it.
+Clawd is a virtual pet for your [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) clock: hatch
+it from an egg, feed it, play with it, keep it clean, watch it grow through four life stages, and
+(if you neglect it, you monster) bury it.
 
-The original [Clawd script](https://awtrix.de/flow/wg0GspJj3sl7) by **Blueforcer** runs entirely
-on the clock in [Berry](https://berry-lang.github.io/). On a plain ESP32 without PSRAM (hello,
-Ulanzi TC001) it often won't fit next to your other scripts:
+The pet is **Blueforcer**'s original [Clawd](https://awtrix.de/flow/wg0GspJj3sl7), which runs
+entirely on the clock. On a clock without extra memory (hello, Ulanzi TC001) it often won't fit
+next to your other apps (`ERR:Clawd - out of memory`), so **Moepchi** moved its brain off the
+clock into [n8n](https://n8n.io). This version builds on both: the same pet, and you choose how
+much of it runs on the clock.
 
-```
-ERR:Clawd - out of memory
-```
+## Pick a mode
 
-This repo gives Clawd a brain somewhere else. Pick how much of it lives on the clock:
-
-| Mode | On the clock | Brain | Feels like the original? | Needs |
-|---|---|---|---|---|
-| **push** | nothing | n8n renders every frame | mostly: a frame every 2 s, no Star Catch | n8n, MQTT broker |
-| **view** | the `clawd` app (drawing + buttons) | n8n | yes: 40 fps, Star Catch, proper buttons | n8n, MQTT broker |
-| **device** | `clawd` app + `clawdcore` module | the clock | yes, and no n8n at all | enough free script memory |
-
-Push mode costs the clock no script memory. View mode uses about 10% less
-than the original, device mode about 30% more (details in
-[awtrix/README.md](awtrix/README.md#memory)).
-
-## What changed in 2.0
-
-- **Sound works.** It was sent to `/api/v1/sounds/play`, which AWTRIX NG does not have; it now
-  uses `/api/v1/audio/play`. Sound and notifications are opt-in, like the original.
-- **Buttons only act while Clawd is on screen.** A press on the clock or any other app no longer
-  opens Clawd's menu, and physical buttons never switch apps (left/right used to be yanked back
-  to Clawd). Home Assistant buttons do still bring Clawd on screen.
-- **Stats show up.** The payload used `"scroll": true`, which AWTRIX NG rejects.
-- **One speed setting.** `HUNGER_EMPTY_HOURS` (default **12 h**, the original is ~4 h) drives
-  decay, the potty timer and the offline catch-up, which now always runs slower than live play.
-  Growing up still takes 12 / 36 / 72 h, each its own setting.
-- **Your time zone.** Sleep and night use `TZ` (default `Europe/Brussels`, any IANA zone), not
-  the n8n server's clock.
-- **No lost presses.** n8n loads a workflow's saved state when a run starts and writes it back
-  when it ends, so overlapping runs could undo each other. Plain ticks now only save when
-  something changed, and all HTTP calls run in a background sub-workflow, so a run that owns the
-  state lasts milliseconds.
-- **Frozen frames are visible.** If n8n stops, AWTRIX draws a red frame around Clawd after
-  90 s (`lifetimeExpiry: mark`), and the view app shows `OFF`.
-- **Missing effects are back:** food, the evolve/hatch flash, the warm-egg heart, one heart per
-  Star Catch hit, the drifting cloud, the bobbing "z".
-- **Less traffic:** successful executions are not stored, and off screen the frame is only
-  refreshed when it changes or every 30 s.
-- **Tests:** engine unit tests, workflow checks, the on-device scripts in a simulated AWTRIX, and
-  an integration test against a real n8n.
-
-## Setup
-
-### 1. AWTRIX NG
-
-Enable MQTT (`mqttEnabled`, `mqttHost`, and a `mqttPrefix` such as `awtrixNG`). If you had the
-original Clawd script installed, delete it.
-
-### 2a. Push mode (n8n draws)
-
-1. In n8n, import [`n8n/clawd-workflow.json`](n8n/clawd-workflow.json).
-2. **AWTRIX MQTT** node: pick your MQTT credential. Its topics use `+` for the prefix; if your
-   prefix contains a `/`, put the prefix there instead.
-3. **Settings** node: set `AWTRIX_HOST` (the clock's IP) and `MQTT_PREFIX`, plus anything from
-   the table below.
-4. **Publish/activate the workflow.** Static data only persists for an active workflow, so test
-   runs from the editor do not keep the pet's state.
-
-### 2b. View mode (the clock draws, n8n thinks)
-
-1. In n8n, import [`n8n/clawd-workflow-view.json`](n8n/clawd-workflow-view.json), set its MQTT
-   credential (two nodes) and the **Settings** node, and publish it. Only one of the two
-   workflows may be active: both use the webhook path `clawd-action`.
-2. On the clock (web UI, Scripts): create a script named **`clawd`** and paste
-   [`dist/clawd.ax`](dist/clawd.ax). Leave "Brain" on `n8n`.
-
-### 2c. Device mode (no n8n)
-
-1. On the clock, install [`dist/clawdcore.ax`](dist/clawdcore.ax) as a module, then
-   [`dist/clawd.ax`](dist/clawd.ax) as the script **`clawd`**.
-2. In the Apps tab, set Clawd's "Brain" to `device`. The module's own settings (hunger hours,
-   sleep window, ...) are on its gear button in the Modules card.
-
-### 3. Home Assistant (optional)
-
-- **n8n brain (push or view), over MQTT (no HA restart):** merge
-  [`homeassistant/scripts-mqtt.yaml`](homeassistant/scripts-mqtt.yaml) into your scripts, or
-  publish a plain action word (`feed`) or `{"a":"feed"}` to `HA_TOPIC` (default `clawd/ha`)
-  yourself, e.g. with MQTT `button` entities. In both modes it applies the action and brings
-  Clawd on screen, like the webhook. Don't use `clawd/cmd` (`CMD_TOPIC`) for this: that is the
-  clock's own topic, and its commands never switch apps. The retained state line on
-  `STATE_TOPIC` (see [awtrix/README.md](awtrix/README.md#how-the-pieces-talk)) carries every
-  stat for sensors, in push and view mode alike.
-- **n8n brain (push or view), via the webhook:** add [`homeassistant/rest_command.yaml`](homeassistant/rest_command.yaml)
-  (`rest_command: !include homeassistant/rest_command.yaml`, replace `<N8N_HOST>`, restart HA
-  fully) and merge [`homeassistant/scripts.yaml`](homeassistant/scripts.yaml) into yours.
-- **Device brain:** merge [`homeassistant/scripts-device.yaml`](homeassistant/scripts-device.yaml)
-  instead; it publishes straight to MQTT.
-- Either way, [`homeassistant/lovelace-card.yaml`](homeassistant/lovelace-card.yaml) gives you a
-  button grid.
-- **See the pet:** add an MQTT camera on `MIRROR_TOPIC` (default `clawd/screen`) with
-  `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock.
-  - *Push mode:* turn on `MIRROR` (Settings node, or live - see [Changing settings](#changing-settings-while-it-runs)); every pushed frame is mirrored.
-  - *View mode:* the clock draws the pet, so n8n has no frames of its own. Import
-    [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json) as well, set its MQTT
-    credential and Settings (same `AWTRIX_HOST`, `MQTT_PREFIX` and `APP_NAME` as the view
-    workflow) and publish it. It follows the view workflow's `MIRROR` (published on
-    `CONFIG_TOPIC`), so switch it there. While Clawd is on screen it reads the clock's
-    `GET /api/v1/display/screen` every 10 s (2 s timeout, failures skipped) and publishes that
-    as the PNG; with another app on screen it reads nothing and the camera keeps Clawd's last
-    picture. Each read is a request the clock has to answer, so don't set the tick below 5 s.
-    Not needed (and not wanted) next to the push workflow. A camera
-  rather than an MQTT image entity: an image entity's state is its update time, so the recorder
-  would store a row for every frame; a camera's stays `idle`.
-
-The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`, `play`,
-`clean`, `med`, `sleep` (toggle), `wake`, `stats`, `reset` (only while dead), or
-`{"config":{...}}` to change settings.
-
-- **Settings in Home Assistant:** [`homeassistant/mqtt-settings.json`](homeassistant/mqtt-settings.json)
-  holds one control per live setting (switches, number boxes, text fields and a *Reset settings*
-  button), generated from the engine so its limits always match. Add its `cmps` to your Clawd
-  device's MQTT discovery message, or wrap them in a device of their own
-  (`{"dev":{"ids":["clawd_pet"],"name":"Clawd"},"o":{"name":"clawd"},"cmps":{...}}`) and
-  publish that, retained, to `homeassistant/device/clawd_pet/config`.
-
-## Changing settings while it runs
-
-The Settings node gives the defaults. These can also be changed while Clawd runs, and each
-change shows up everywhere:
-
-| Setting | Home Assistant | MQTT / webhook | on the clock (view mode) |
+| Mode | What runs where | You need | Good to know |
 |---|---|---|---|
-| `PET_NAME`, `SOUND` | ✅ | ✅ | ✅ Clawd's own settings |
-| `NOTIFY`, `SWITCH_ON_EVENTS`, `MIRROR`, `HUNGER_EMPTY_HOURS`, `EGG_HATCH_MIN`, `CHILD/TEEN/ADULT_AT_HOURS`, `SLEEP_FROM/TO`, `NIGHT_FROM/TO`, `TZ` | ✅ | ✅ | - |
+| **View** ⭐ | the clock draws Clawd, n8n runs the rules | n8n + an MQTT broker | the best experience: smooth animation and the Star Catch mini-game. Uses some memory on the clock |
+| **Push** | n8n draws everything and sends pictures to the clock | n8n + an MQTT broker | nothing installed on the clock, so it always fits. Updates every 2 s, no mini-game |
+| **Device** | everything on the clock | nothing else | no n8n, no Home Assistant. Needs the most memory on the clock |
 
-- **MQTT:** publish JSON with any of them to `CONFIG_SET_TOPIC` (default `clawd/config/set`),
-  e.g. `{"SOUND":true,"HUNGER_EMPTY_HOURS":10}`. Each value is checked like the Settings node's;
-  one that would be refused there (out of range, unknown zone, a child older than a teen...)
-  is left out. `{"SOUND":null}` goes back to the Settings node's value, `{"reset":true}` does
-  that for all of them. The same JSON works as `{"config":{...}}` on the webhook.
-- **Always current:** n8n publishes the settings in use, retained, to `CONFIG_TOPIC` (default
-  `clawd/config`) after every change and in answer to every settings message, so a Home
-  Assistant control snaps back when a value was refused. Changes are kept in the workflow's
-  static data and win over the Settings node until cleared.
-- **The clock (view mode):** Clawd's own *Sound* and *Pet name* follow along. n8n sends a change
-  to the app (`PATCH /api/v1/apps/clawd/config`), and the app reports its values to n8n when it
-  starts and when n8n comes back after a silence - so a change made in the clock's web UI (which
-  restarts the app) reaches n8n and Home Assistant too. n8n waits for that first report before
-  it sends anything, so an older `clawd` app is left alone; saving a setting restarts the app,
-  which the pet does not notice.
-- **Not live, on purpose:** topics, `AWTRIX_HOST`, `MQTT_PREFIX`, `APP_NAME` and the push-mode
-  tuning (`BURST`, `OFFSCREEN_REFRESH_SEC`, `STALE_AFTER_SEC`) stay in the Settings node: a
-  wrong topic or address set over MQTT would cut n8n off from the topic you'd fix it with.
-  The clock's own app time and mute are the clock's settings.
+Not sure? Try **view mode**. If the clock says "out of memory", use **push mode**.
 
-## Settings (n8n "Settings" node)
+Home Assistant is optional in every mode.
 
-| Setting | Default | |
-|---|---|---|
-| `AWTRIX_HOST` | `192.168.1.50` | the clock's IP or host name |
-| `MQTT_PREFIX` | `awtrixNG` | AWTRIX NG's MQTT prefix (push mode) |
-| `APP_NAME` | `clawd` | pushed app name, or the name of the view script |
-| `PET_NAME` | `Clawd` | up to 12 characters |
-| `TZ` | `Europe/Brussels` | any IANA zone, e.g. `America/New_York` |
-| `HUNGER_EMPTY_HOURS` | `12` | awake, full to empty; `3.97` is the original speed. At 12 h a pet that goes to bed (22-8) at 60% hunger still has food left in the morning, and ~4 feeds a day keep it fed; at the original speed an unfed night starves it |
-| `EGG_HATCH_MIN` | `30` | |
-| `CHILD_AT_HOURS` / `TEEN_AT_HOURS` / `ADULT_AT_HOURS` | `12` / `36` / `72` | |
-| `SLEEP_FROM` / `SLEEP_TO` | `22` / `8` | auto-sleep, local hours |
-| `NIGHT_FROM` / `NIGHT_TO` | `20` / `6` | night scenery |
-| `SOUND` | `false` | effect tunes on the buzzer |
-| `NOTIFY` | `false` | "Clawd needs you!", at most every 30 min |
-| `SWITCH_ON_EVENTS` | `true` | bring Clawd on screen when it hatches, evolves, falls ill or dies |
-| `BURST` | `true` | push mode: extra frames every 250 ms while an effect plays |
-| `OFFSCREEN_REFRESH_SEC` | `30` | push mode: refresh interval while another app is shown |
-| `STALE_AFTER_SEC` | `90` | push mode: red frame after this long without updates (0 = off) |
-| `MIRROR` | `false` | publish the screen as a PNG (256x64, one 8x8 dot per LED): push mode mirrors each pushed frame, view mode switches the mirror workflow |
-| `MIRROR_TOPIC` | `clawd/screen` | push mode: where the PNG goes, base64, retained (the mirror workflow has its own) |
-| `STATE_TOPIC` | `clawd/state` | state line out, for the view app and Home Assistant; in view mode it must match the app's setting |
-| `CMD_TOPIC` | `clawd/cmd` | view mode: the clock app's commands (must match its "Command topic"); they never switch apps |
-| `HA_TOPIC` | `clawd/ha` | Home Assistant's commands, both modes: apply the action and bring Clawd on screen. The MQTT trigger's topic list must contain it; may not equal `CMD_TOPIC` |
-| `CONFIG_TOPIC` / `CONFIG_SET_TOPIC` | `clawd/config` / `clawd/config/set` | settings in use (retained) / settings changes in; see [Changing settings](#changing-settings-while-it-runs). The MQTT trigger's topic list must contain `CONFIG_SET_TOPIC`, the mirror workflow's `CONFIG_TOPIC` |
+## Install
 
-A value n8n can't use falls back to its default; the engine's output lists it under `warnings`.
+### 1. Prepare the clock (all modes)
 
-## How it works
+- Update to the latest AWTRIX NG.
+- If you had the original Clawd installed, delete it (web UI → Apps).
+- **View and push mode:** turn on MQTT in the clock's settings (broker address, user, password)
+  and note the **prefix** (for example `awtrixNG`).
 
-```
-                     ┌──────────────────────┐   background sub-workflow
-  schedule tick ────►│  Settings → Engine   ├──► PUT  /api/v1/apps/pushed/clawd   (push)
-  MQTT buttons  ────►│  (rules, state in    ├──► PUT  /api/v1/apps/active         (HA, events)
-  + app on screen    │   workflow static    ├──► POST /api/v1/audio/play          (SOUND)
-  HA webhook    ────►│   data)              ├──► POST /api/v1/notifications       (NOTIFY)
-  clawd/cmd, /ha ───►│                      ├──► MQTT clawd/state (retained)      (view app, HA)
-                     └──────────────────────┘
-```
+### 2. Install your mode
 
-[`n8n/clawd-engine.js`](n8n/clawd-engine.js) holds all the rules and is the only place to change
-them; [`scripts/build.js`](scripts/build.js) pastes it into the workflows and builds `dist/`.
-[`awtrix/clawd-view.ax`](awtrix/clawd-view.ax) and [`awtrix/clawdcore.ax`](awtrix/clawdcore.ax)
-are the readable sources of the clock-side scripts.
+**View mode**
 
-## Development
+1. In n8n: **Create credential → MQTT**, and enter your broker's address, user and password.
+2. In n8n: **Import from file** → [`n8n/clawd-workflow-view.json`](n8n/clawd-workflow-view.json).
+3. Open every MQTT node (they have a warning triangle) and pick your MQTT credential.
+4. Open the **Settings** node and set `AWTRIX_HOST` to your clock's IP address.
+5. **Publish** (activate) the workflow.
+6. On the clock's web UI: **Scripts → New script**, name it **`clawd`**, paste the contents of
+   [`dist/clawd.ax`](dist/clawd.ax) and save.
 
-```bash
-npm run build   # regenerate n8n/*.json and dist/*.ax after editing a source
-npm test        # engine, workflows, and (with BERRY=/path/to/berry) the Berry scripts
-```
+**Push mode**
 
-The Berry tests need a [Berry](https://github.com/berry-lang/berry) interpreter (`make` in its
-repo); without one they are skipped. [`test/integration`](test/integration) runs the workflows in
-a real n8n against a fake clock.
+1. In n8n: **Create credential → MQTT**, and enter your broker's address, user and password.
+2. In n8n: **Import from file** → [`n8n/clawd-workflow.json`](n8n/clawd-workflow.json).
+3. Open every MQTT node and pick your MQTT credential.
+4. Open the **Settings** node: set `AWTRIX_HOST` to your clock's IP address and `MQTT_PREFIX` to
+   your clock's MQTT prefix.
+5. **Publish** (activate) the workflow. Clawd shows up as an app within a few seconds.
 
-## Known limitations
+**Device mode**
 
-- **Push mode is not real-time.** One frame every 2 s plus bursts during effects; the menu's
-  progress bar jumps. View mode fixes this.
-- **Push mode has no Star Catch.** PLAY there is an instant +1500 happiness.
-- **Double press.** In push mode AWTRIX still toggles the display on a quick double press of
-  select, because a pushed app cannot take the button. View mode takes it.
-- **Overlapping runs.** The save window is now milliseconds wide, not gone: n8n has no
-  per-workflow lock.
-- Needs n8n (push/view) or enough free script memory (device).
+1. On the clock's web UI, add [`dist/clawdcore.ax`](dist/clawdcore.ax) as a **module**.
+2. Add [`dist/clawd.ax`](dist/clawd.ax) as a **script** named **`clawd`**.
+3. Apps → Clawd → gear button: set **Brain** to `device`.
+
+Only run one mode at a time. Settings in n8n only stick once the workflow is published: test runs
+from the editor don't keep the pet.
+
+## Play
+
+When Clawd is on screen:
+
+- **Egg:** it hatches after 30 minutes; every press of **select** warms it and brings that a
+  minute closer.
+- **Menu:** press **select** to open it, press again to go to the next item, and wait 2 seconds to
+  do it: feed, play, clean, medicine, sleep/wake, stats. Keep the bars at the right full.
+- **Play** (view and device mode): a star bounces across the top; press **select** when it's
+  right above Clawd. Three tries.
+- **Left / right** change apps as usual. Buttons never do anything to Clawd while another app is
+  on screen.
+- **Dead:** press **select**, press it again for "NEW EGG?", and wait 3 seconds.
+
+Clawd sleeps from 22:00 to 08:00, grows up after 12, 36 and 72 hours, and needs about four meals
+a day.
+
+## Home Assistant (optional, view and push mode)
+
+1. **Add the Clawd device.** In Home Assistant: **Developer tools → Actions**, pick
+   **MQTT: Publish** and fill in:
+   - **Topic:** `homeassistant/device/clawd/config`
+   - **Payload:** the whole contents of
+     [`homeassistant/clawd-discovery.json`](homeassistant/clawd-discovery.json)
+   - **Retain:** on
+
+   Press **Perform action**. A **Clawd** device appears (Settings → Devices) with its stats,
+   buttons (feed, play, clean...) and settings.
+2. **Add the dashboard.** **Settings → Dashboards → Add dashboard → New dashboard from scratch**,
+   open it, **pencil → ⋮ → Raw configuration editor**, and replace everything with
+   [`homeassistant/dashboard.yaml`](homeassistant/dashboard.yaml).
+3. **Optional, see the pet:** turn on **Screen mirror** in the dashboard's settings. In view
+   mode, also import [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json) and fill
+   in its MQTT credential and Settings like before.
+
+## Settings
+
+Change them in n8n's **Settings** node, or while Clawd runs from the dashboard's **Settings**
+section: name, sound, notifications, how fast Clawd gets hungry, growing-up ages, sleep and night
+hours, time zone. The time zone is n8n's own unless you set one. In view mode, Clawd's name and
+sound can also be changed on the clock (Apps → Clawd → gear button).
+
+All settings, and how to change them over MQTT: [docs/REFERENCE.md](docs/REFERENCE.md).
+
+## Troubleshooting
+
+- **Nothing happens:** is the workflow published? Are the MQTT credential and `AWTRIX_HOST`
+  right? In n8n, the workflow's **Executions** show errors.
+- **Buttons don't work (push mode):** `MQTT_PREFIX` must match the clock's MQTT prefix.
+- **"out of memory" when saving the script:** restart the clock and save it again right away. If
+  it still fails, use push mode.
+- **`OFF` on the clock (view mode) or a red frame (push mode):** n8n hasn't sent anything for a
+  while. Check that n8n is running and the workflow is published.
+
+## More
+
+- [docs/REFERENCE.md](docs/REFERENCE.md): every setting, live settings over MQTT, other Home
+  Assistant options, the screen mirror, how it works, what differs from the original, development.
+- [awtrix/README.md](awtrix/README.md): the clock app, its settings and memory use.
 
 ## Credits
 
-All game design, sprite art, and the original brilliant idea: **Blueforcer**'s
-[Clawd](https://awtrix.de/flow/wg0GspJj3sl7) for AWTRIX NG. This repo is an alternative runtime for
-the same pet — same crab, same stats, same tiny pixelated tombstone if you forget about him.
+The pet — game design, sprite art and the brilliant idea — is **Blueforcer**'s
+[Clawd](https://awtrix.de/flow/wg0GspJj3sl7) for AWTRIX NG. **Moepchi** trimmed it down and moved
+it off the device into n8n ([clawd-offdevice](https://github.com/Moepchi/clawd-offdevice)). This
+version combines the two into a hybrid: the same crab, the same stats, the same tiny pixelated
+tombstone if you forget about him, now in whichever mode fits your clock.
 
 Built with an unreasonable amount of debugging assistance from Claude. 🤖

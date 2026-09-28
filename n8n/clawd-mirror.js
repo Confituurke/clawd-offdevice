@@ -1,6 +1,6 @@
 // Clawd mirror: turns a push-mode frame (the same draw commands AWTRIX gets)
 // into a PNG, so something else - a Home Assistant MQTT camera, say - can show
-// the pet. Optional; see MIRROR in the README.
+// the pet. Optional; see "Seeing the pet" in docs/REFERENCE.md.
 //
 // View mode has no frames in n8n (the clock draws), so its mirror workflow reads
 // the clock's framebuffer instead - GET /api/v1/display/screen, 256 colours as

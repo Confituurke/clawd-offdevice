@@ -1,5 +1,199 @@
 {
+  "dev": {
+    "ids": [
+      "clawd"
+    ],
+    "name": "Clawd",
+    "mdl": "Virtual pet",
+    "mf": "Clawd off-device"
+  },
+  "o": {
+    "name": "clawd-offdevice"
+  },
+  "state_topic": "clawd/state",
   "cmps": {
+    "stage": {
+      "p": "sensor",
+      "name": "Stage",
+      "unique_id": "clawd_stage",
+      "icon": "mdi:egg-easter",
+      "value_template": "{% set f = value.split(',') %}{% set st = f[1] | int %}{% set ev = f[2] | int %}{% set va = f[3] | int %}{{ 'Egg' if st == 0 else 'Dead' if st == 2 else (['Egg', 'Baby', 'Child', 'Teen', 'Adult'][ev] ~ ((' (well raised)' if va == 0 else ' (neglected)' if va == 2 else '') if ev == 4 else '')) }}",
+      "expire_after": 180
+    },
+    "food": {
+      "p": "sensor",
+      "name": "Food",
+      "unique_id": "clawd_food",
+      "icon": "mdi:food-drumstick",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[4] | int) / 100) | round(0) | int }}",
+      "expire_after": 180,
+      "unit_of_measurement": "%",
+      "state_class": "measurement"
+    },
+    "happiness": {
+      "p": "sensor",
+      "name": "Happiness",
+      "unique_id": "clawd_happiness",
+      "icon": "mdi:emoticon-happy",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[5] | int) / 100) | round(0) | int }}",
+      "expire_after": 180,
+      "unit_of_measurement": "%",
+      "state_class": "measurement"
+    },
+    "energy": {
+      "p": "sensor",
+      "name": "Energy",
+      "unique_id": "clawd_energy",
+      "icon": "mdi:lightning-bolt",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[6] | int) / 100) | round(0) | int }}",
+      "expire_after": 180,
+      "unit_of_measurement": "%",
+      "state_class": "measurement"
+    },
+    "hygiene": {
+      "p": "sensor",
+      "name": "Hygiene",
+      "unique_id": "clawd_hygiene",
+      "icon": "mdi:shower",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[7] | int) / 100) | round(0) | int }}",
+      "expire_after": 180,
+      "unit_of_measurement": "%",
+      "state_class": "measurement"
+    },
+    "health": {
+      "p": "sensor",
+      "name": "Health",
+      "unique_id": "clawd_health",
+      "icon": "mdi:heart-pulse",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[8] | int) / 100) | round(0) | int }}",
+      "expire_after": 180,
+      "unit_of_measurement": "%",
+      "state_class": "measurement"
+    },
+    "age": {
+      "p": "sensor",
+      "name": "Age",
+      "unique_id": "clawd_age",
+      "icon": "mdi:cake-variant",
+      "value_template": "{% set f = value.split(',') %}{{ ((f[15] | int) / 3600) | round(1) }}",
+      "expire_after": 180,
+      "unit_of_measurement": "h",
+      "state_class": "measurement"
+    },
+    "poop": {
+      "p": "sensor",
+      "name": "Poop",
+      "unique_id": "clawd_poop",
+      "icon": "mdi:emoticon-poop",
+      "value_template": "{% set f = value.split(',') %}{{ f[9] | int }}",
+      "expire_after": 180
+    },
+    "care": {
+      "p": "sensor",
+      "name": "Care score",
+      "unique_id": "clawd_care",
+      "icon": "mdi:hand-heart",
+      "value_template": "{% set f = value.split(',') %}{{ f[14] | int }}",
+      "expire_after": 180,
+      "state_class": "measurement"
+    },
+    "generation": {
+      "p": "sensor",
+      "name": "Generation",
+      "unique_id": "clawd_generation",
+      "icon": "mdi:family-tree",
+      "value_template": "{% set f = value.split(',') %}{{ f[13] | int }}",
+      "expire_after": 180
+    },
+    "asleep": {
+      "p": "binary_sensor",
+      "name": "Asleep",
+      "unique_id": "clawd_asleep",
+      "icon": "mdi:sleep",
+      "value_template": "{% set f = value.split(',') %}{{ 'ON' if f[11] == '1' else 'OFF' }}",
+      "expire_after": 180
+    },
+    "sick": {
+      "p": "binary_sensor",
+      "name": "Sick",
+      "unique_id": "clawd_sick",
+      "icon": "mdi:emoticon-sick",
+      "value_template": "{% set f = value.split(',') %}{{ 'ON' if f[10] == '1' else 'OFF' }}",
+      "expire_after": 180,
+      "device_class": "problem"
+    },
+    "btn_feed": {
+      "p": "button",
+      "name": "Feed",
+      "unique_id": "clawd_btn_feed",
+      "icon": "mdi:food-drumstick",
+      "command_topic": "clawd/ha",
+      "payload_press": "feed"
+    },
+    "btn_play": {
+      "p": "button",
+      "name": "Play",
+      "unique_id": "clawd_btn_play",
+      "icon": "mdi:star",
+      "command_topic": "clawd/ha",
+      "payload_press": "play"
+    },
+    "btn_clean": {
+      "p": "button",
+      "name": "Clean",
+      "unique_id": "clawd_btn_clean",
+      "icon": "mdi:broom",
+      "command_topic": "clawd/ha",
+      "payload_press": "clean"
+    },
+    "btn_med": {
+      "p": "button",
+      "name": "Medicine",
+      "unique_id": "clawd_btn_med",
+      "icon": "mdi:pill",
+      "command_topic": "clawd/ha",
+      "payload_press": "med"
+    },
+    "btn_sleep": {
+      "p": "button",
+      "name": "Sleep",
+      "unique_id": "clawd_btn_sleep",
+      "icon": "mdi:power-sleep",
+      "command_topic": "clawd/ha",
+      "payload_press": "sleep"
+    },
+    "btn_wake": {
+      "p": "button",
+      "name": "Wake up",
+      "unique_id": "clawd_btn_wake",
+      "icon": "mdi:weather-sunny",
+      "command_topic": "clawd/ha",
+      "payload_press": "wake"
+    },
+    "btn_stats": {
+      "p": "button",
+      "name": "Show stats",
+      "unique_id": "clawd_btn_stats",
+      "icon": "mdi:chart-box",
+      "command_topic": "clawd/ha",
+      "payload_press": "stats"
+    },
+    "btn_reset": {
+      "p": "button",
+      "name": "New egg",
+      "unique_id": "clawd_btn_reset",
+      "icon": "mdi:egg",
+      "command_topic": "clawd/ha",
+      "payload_press": "reset"
+    },
+    "screen": {
+      "p": "camera",
+      "name": "Screen",
+      "unique_id": "clawd_screen",
+      "icon": "mdi:led-strip",
+      "topic": "clawd/screen",
+      "image_encoding": "b64"
+    },
     "set_pet_name": {
       "p": "text",
       "name": "Pet name",

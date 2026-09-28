@@ -8,6 +8,7 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const FILES = ['n8n/clawd-workflow.json', 'n8n/clawd-workflow-view.json'];
+const T0 = Date.UTC(2026, 8, 27, 8, 0, 0);
 const load = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8'));
 // The HTTP calls live in an inline sub-workflow (Execute Workflow, "Define Below").
 const subOf = (wf) => JSON.parse(wf.nodes.find((n) => n.type === 'n8n-nodes-base.executeWorkflow').parameters.workflowJson);
@@ -234,7 +235,8 @@ test('view mirror workflow: follows MIRROR from the settings topic', () => {
 
 test('Home Assistant settings entities: one per live setting, and every command they send is accepted', () => {
   const E = require('../n8n/clawd-engine.js');
-  const { cmps } = load('homeassistant/mqtt-settings.json');
+  const all = load('homeassistant/clawd-discovery.json').cmps;
+  const cmps = Object.fromEntries(Object.entries(all).filter(([k]) => k.startsWith('set_')));
   const byKey = {};
   for (const c of Object.values(cmps)) {
     assert.equal(c.command_topic, 'clawd/config/set', c.name);
@@ -263,4 +265,31 @@ test('Home Assistant settings entities: one per live setting, and every command 
   }
   assert.equal(E.effectiveConfig({}, store).PET_NAME, 'Mr "Pinch"');
   assert.deepEqual(E.applySettings(byKey.reset.payload_press, store, {}).accepted, ['reset']);
+});
+
+// Home Assistant's entity id for an entity named `name` on the device "Clawd".
+const haId = (p, name) => `${p}.clawd_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`;
+
+test('Home Assistant discovery: one generic device; sensors read real state line fields, buttons real actions', () => {
+  const E = require('../n8n/clawd-engine.js');
+  const disc = load('homeassistant/clawd-discovery.json');
+  assert.deepEqual(disc.dev.ids, ['clawd']);
+  assert.equal(disc.dev.via_device, undefined, 'not tied to anyone\'s clock');
+  assert.equal(disc.state_topic, 'clawd/state');
+  const fields = E.stateLine(E.freshState(1, T0), E.makeConfig({}), T0).split(',').length;
+  for (const [id, c] of Object.entries(disc.cmps)) {
+    assert.equal(c.unique_id.startsWith('clawd_'), true, id);
+    for (const m of (c.value_template || '').matchAll(/f\[(\d+)\]/g)) assert.ok(+m[1] < fields, `${id} reads field ${m[1]}`);
+    if (c.p === 'button' && c.command_topic === 'clawd/ha') assert.ok(c.payload_press in E.ACTIONS, `${id}: ${c.payload_press}`);
+  }
+  assert.equal(disc.cmps.screen.topic, 'clawd/screen');
+});
+
+test('Home Assistant demo dashboard: every entity it shows comes from the discovery message', () => {
+  const disc = load('homeassistant/clawd-discovery.json');
+  const ids = new Set(Object.values(disc.cmps).map((c) => haId(c.p, c.name)));
+  const yaml = fs.readFileSync(path.join(ROOT, 'homeassistant', 'dashboard.yaml'), 'utf8');
+  const used = [...new Set(yaml.match(/\b(?:sensor|binary_sensor|button|switch|number|text|camera)\.clawd_[a-z0-9_]+/g))];
+  assert.ok(used.length > 30, `${used.length} entities on the dashboard`);
+  for (const e of used) assert.ok(ids.has(e), `${e} is not created by clawd-discovery.json`);
 });

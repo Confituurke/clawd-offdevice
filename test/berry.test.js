@@ -24,7 +24,7 @@ function findBerry() {
 // protocol are tested together.
 function stateLines() {
   const cfg = E.makeConfig({});
-  const T = Date.UTC(2026, 8, 27, 8, 0, 0);          // 10:00 in Brussels
+  const T = Date.UTC(2026, 8, 27, 8, 0, 0);          // 10:00 in Berlin
   const base = Object.assign(E.freshState(1, T), { st: 1, ev: 2, h: 7000, ha: 6000, en: 8000, cl: 9000, age: 50000, gen: 1, cs: 20 });
   const mk = (extra) => E.stateLine(Object.assign({}, base, extra), cfg, T);
   return {

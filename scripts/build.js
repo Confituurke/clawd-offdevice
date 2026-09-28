@@ -72,12 +72,18 @@ return out;
 
 const TICK_EVENT = `return [{ json: { event: 'tick' } }];`;
 
-const ACTIVE_EVENT = `// <prefix>/state/apps/active carries the name of the app on screen.
+const ACTIVE_EVENT = `// <prefix>/state/apps/active carries the name of the app on screen; the
+// settings topic (retained JSON from the view workflow) says whether MIRROR is on.
 const out = [];
 for (const item of $input.all()) {
   const topic = String(item.json.topic || '');
   const at = topic.lastIndexOf('/state/apps/active');
-  if (at < 0) continue;
+  if (at < 0) {
+    let o = null;
+    try { o = JSON.parse(String(item.json.message ?? '')); } catch (e) { /* not settings */ }
+    if (o && typeof o.MIRROR === 'boolean') out.push({ json: { event: 'config', mirror: o.MIRROR } });
+    continue;
+  }
   out.push({ json: { event: 'active', app: String(item.json.message ?? '').trim().replace(/^"|"$/g, ''), prefix: topic.slice(0, at) } });
 }
 return out;`;
@@ -85,7 +91,8 @@ return out;`;
 const MQTT_EVENT = `// AWTRIX NG publishes "1" on press and "0" on release (retained), and the
 // name of the app on screen as a plain string. Only presses and app changes
 // matter; the engine checks the prefix against the Settings node. Anything
-// else this trigger receives is Home Assistant's topic (HA_TOPIC).
+// else this trigger receives is Home Assistant's topic (HA_TOPIC) or the
+// settings topic (CONFIG_SET_TOPIC); the engine tells them apart by topic.
 const out = [];
 for (const item of $input.all()) {
   const topic = String(item.json.topic || '');
@@ -102,17 +109,20 @@ for (const item of $input.all()) {
 }
 return out;`;
 
-const HA_EVENT = `// Home Assistant (or anything else) posts {"action":"feed"} to this webhook.
+const HA_EVENT = `// Home Assistant (or anything else) posts {"action":"feed"} to this webhook,
+// or {"config":{"SOUND":true}} to change settings.
 const out = [];
 for (const item of $input.all()) {
   const body = item.json.body || item.json;
   const name = String(body.action || '').trim().toLowerCase();
   if (name) out.push({ json: { event: 'action', name } });
+  if (body.config && typeof body.config === 'object') out.push({ json: { event: 'config', payload: body.config } });
 }
 return out;`;
 
 const CMD_EVENT = `// The on-device view script publishes {"a":"feed"} etc. on CMD_TOPIC, Home
-// Assistant on HA_TOPIC; the engine tells them apart by topic.
+// Assistant on HA_TOPIC, settings changes arrive on CONFIG_SET_TOPIC; the
+// engine tells them apart by topic.
 return $input.all().map((item) => ({ json: { event: 'cmd', payload: String(item.json.message ?? ''), topic: String(item.json.topic || '') } }));`;
 
 const SPLIT_FRAMES = `// One item per extra frame; the next node sends them 250 ms apart.
@@ -208,11 +218,12 @@ function settings(mode, pos) {
     ['NOTIFY', d.NOTIFY, 'boolean'],
     ['SWITCH_ON_EVENTS', d.SWITCH_ON_EVENTS, 'boolean']
   ];
-  if (mode === 'push') rows.push(['BURST', d.BURST, 'boolean'], ['OFFSCREEN_REFRESH_SEC', d.OFFSCREEN_REFRESH_SEC, 'number'], ['STALE_AFTER_SEC', d.STALE_AFTER_SEC, 'number'],
-    ['MIRROR', d.MIRROR, 'boolean'], ['MIRROR_TOPIC', d.MIRROR_TOPIC, 'string']);
+  if (mode === 'push') rows.push(['BURST', d.BURST, 'boolean'], ['OFFSCREEN_REFRESH_SEC', d.OFFSCREEN_REFRESH_SEC, 'number'], ['STALE_AFTER_SEC', d.STALE_AFTER_SEC, 'number']);
+  rows.push(['MIRROR', d.MIRROR, 'boolean']);
+  if (mode === 'push') rows.push(['MIRROR_TOPIC', d.MIRROR_TOPIC, 'string']);
   rows.push(['STATE_TOPIC', d.STATE_TOPIC, 'string']);
   if (mode === 'view') rows.push(['CMD_TOPIC', d.CMD_TOPIC, 'string']);
-  rows.push(['HA_TOPIC', d.HA_TOPIC, 'string']);
+  rows.push(['HA_TOPIC', d.HA_TOPIC, 'string'], ['CONFIG_TOPIC', d.CONFIG_TOPIC, 'string'], ['CONFIG_SET_TOPIC', d.CONFIG_SET_TOPIC, 'string']);
   return {
     id: id('set'), name: 'Settings', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos,
     notes: 'All of Clawd\'s settings live here. See README "Settings".',
@@ -263,6 +274,7 @@ function awtrixSubWorkflow(parts) {
   add('Has SwitchTo', '$json.switchTo === true', http('Switch To Clawd', 'PUT', '={{ $json.base }}/api/v1/apps/active', '={{ JSON.stringify({ name: $json.app, fast: true }) }}'));
   if (parts.includes('sound')) add('Has Sound', '!!$json.sound', http('Play Sound', 'POST', '={{ $json.base }}/api/v1/audio/play', '={{ JSON.stringify({ rtttl: $json.sound }) }}'));
   add('Has Notify', '!!$json.notify', http('Send Notify', 'POST', '={{ $json.base }}/api/v1/notifications', '={{ JSON.stringify($json.notify) }}'));
+  if (parts.includes('deviceConfig')) add('Has Device Settings', '!!$json.devicePatch', http('Send Device Settings', 'PATCH', '={{ $json.base }}/api/v1/apps/{{ $json.app }}/config', '={{ JSON.stringify($json.devicePatch) }}'));
   if (parts.includes('burst')) {
     nodes.push(ifNode('Has Burst', '($json.frames || []).length > 0', [220, y]));
     nodes.push(code('Split Frames', SPLIT_FRAMES, [440, y]));
@@ -300,6 +312,13 @@ function triggers(tickName, tickSec, mqttNode, mqttEventName, mqttEventCode) {
 
 // The retained state line (view app, Home Assistant). An MQTT publish is quick,
 // so it stays in the main run, like the view mode always had it.
+function publishConfig(pos) {
+  return { id: id('mqtt'), name: 'Publish Settings', type: 'n8n-nodes-base.mqtt', typeVersion: 1, position: pos,
+    credentials: MQTT_CRED, onError: 'continueRegularOutput',
+    notes: 'The settings in use, retained on CONFIG_TOPIC (Home Assistant shows them; the mirror workflow reads MIRROR).',
+    parameters: { topic: '={{ $json.config.topic }}', sendInputData: false, message: '={{ $json.config.message }}', options: { retain: true, qos: 1 } } };
+}
+
 function publishState(pos) {
   return { id: id('mqtt'), name: 'Publish State', type: 'n8n-nodes-base.mqtt', typeVersion: 1, position: pos,
     credentials: MQTT_CRED, onError: 'continueRegularOutput',
@@ -311,13 +330,15 @@ function pushWorkflow() {
   seq = 0;
   const mqttNode = { id: id('trg'), name: 'AWTRIX MQTT', type: 'n8n-nodes-base.mqttTrigger', typeVersion: 1, position: [-600, 200],
     credentials: MQTT_CRED,
-    notes: 'Buttons and the app on screen ("+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it), plus Home Assistant\'s topic, which must match HA_TOPIC in Settings.',
-    parameters: { topics: `+/state/buttons/+,+/state/apps/active,${E.DEFAULTS.HA_TOPIC}`, options: {} } };
+    notes: 'Buttons and the app on screen ("+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it), plus Home Assistant\'s topic and the settings topic, which must match HA_TOPIC and CONFIG_SET_TOPIC in Settings.',
+    parameters: { topics: `+/state/buttons/+,+/state/apps/active,${E.DEFAULTS.HA_TOPIC},${E.DEFAULTS.CONFIG_SET_TOPIC}`, options: {} } };
   const nodes = triggers('Tick every 2s', 2, mqttNode, 'MQTT Event', MQTT_EVENT).concat([
     settings('push', [-160, 200]),
     code('Clawd Engine', ENGINE + ENGINE_WRAPPER, [60, 200], 'Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js.'),
     ifNode('Has State', '!!$json.publish', [280, 0]),
     publishState([500, 0]),
+    ifNode('Has Settings', '!!$json.config', [280, -200]),
+    publishConfig([500, -200]),
     ifNode('Anything To Send', '$json.push || $json.switchTo || !!$json.sound || !!$json.notify', [280, 200]),
     background('Send To AWTRIX', awtrixSubWorkflow(['frame', 'sound', 'burst']), [500, 200]),
     ifNode('Has Mirror', '$json.push === true && !!$json.mirror', [280, 400]),
@@ -334,6 +355,8 @@ function pushWorkflow() {
   link(c, 'Settings', 'Clawd Engine');
   link(c, 'Clawd Engine', 'Has State');
   link(c, 'Has State', 'Publish State');
+  link(c, 'Clawd Engine', 'Has Settings');
+  link(c, 'Has Settings', 'Publish Settings');
   link(c, 'Clawd Engine', 'Anything To Send');
   link(c, 'Anything To Send', 'Send To AWTRIX');
   link(c, 'Clawd Engine', 'Has Mirror');
@@ -347,15 +370,17 @@ function viewWorkflow() {
   seq = 0;
   const mqttNode = { id: id('trg'), name: 'Device Commands (MQTT)', type: 'n8n-nodes-base.mqttTrigger', typeVersion: 1, position: [-600, 200],
     credentials: MQTT_CRED,
-    notes: 'The Clawd script\'s commands (its "Command topic" setting, CMD_TOPIC in Settings) and Home Assistant\'s (HA_TOPIC in Settings).',
-    parameters: { topics: `${E.DEFAULTS.CMD_TOPIC},${E.DEFAULTS.HA_TOPIC}`, options: {} } };
+    notes: 'The Clawd script\'s commands (its "Command topic" setting, CMD_TOPIC in Settings), Home Assistant\'s (HA_TOPIC) and settings changes (CONFIG_SET_TOPIC).',
+    parameters: { topics: `${E.DEFAULTS.CMD_TOPIC},${E.DEFAULTS.HA_TOPIC},${E.DEFAULTS.CONFIG_SET_TOPIC}`, options: {} } };
   const nodes = triggers('Tick every 15s', 15, mqttNode, 'Command Event', CMD_EVENT).concat([
     settings('view', [-160, 200]),
     code('Clawd Engine', ENGINE + ENGINE_WRAPPER, [60, 200], 'Generated from n8n/clawd-engine.js - edit that file and run scripts/build.js.'),
     ifNode('Has State', '!!$json.publish', [280, 100]),
     publishState([500, 100]),
-    ifNode('Anything To Send', '$json.switchTo || !!$json.notify', [280, 300]),
-    background('Send To AWTRIX', awtrixSubWorkflow([]), [500, 300])
+    ifNode('Has Settings', '!!$json.config', [280, -100]),
+    publishConfig([500, -100]),
+    ifNode('Anything To Send', '$json.switchTo || !!$json.notify || !!$json.devicePatch', [280, 300]),
+    background('Send To AWTRIX', awtrixSubWorkflow(['deviceConfig']), [500, 300])
   ]);
   const c = {};
   link(c, 'Tick every 15s', 'Tick Event');
@@ -364,8 +389,10 @@ function viewWorkflow() {
   for (const n of ['Tick Event', 'Command Event', 'HA Event']) link(c, n, 'Settings');
   link(c, 'Settings', 'Clawd Engine');
   link(c, 'Clawd Engine', 'Has State');
+  link(c, 'Clawd Engine', 'Has Settings');
   link(c, 'Clawd Engine', 'Anything To Send');
   link(c, 'Has State', 'Publish State');
+  link(c, 'Has Settings', 'Publish Settings');
   link(c, 'Anything To Send', 'Send To AWTRIX');
   return { name: 'Clawd (view mode)', nodes, connections: c, active: false, settings: WF_SETTINGS, meta: { clawdEngine: E.ENGINE_VERSION } };
 }
@@ -384,11 +411,11 @@ function mirrorWorkflow() {
     code('Tick Event', TICK_EVENT, [-380, 0]),
     { id: id('trg'), name: 'App On Screen (MQTT)', type: 'n8n-nodes-base.mqttTrigger', typeVersion: 1, position: [-600, 200],
       credentials: MQTT_CRED,
-      notes: '"+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it.',
-      parameters: { topics: '+/state/apps/active', options: {} } },
+      notes: '"+" stands for your MQTT prefix; if the prefix contains a "/", replace "+" with it. The second topic is CONFIG_TOPIC of the view workflow: its MIRROR switches this one on and off.',
+      parameters: { topics: `+/state/apps/active,${E.DEFAULTS.CONFIG_TOPIC}`, options: {} } },
     code('Active Event', ACTIVE_EVENT, [-380, 200]),
     { id: id('set'), name: 'Settings', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [-160, 100],
-      notes: 'Same values as the view workflow\'s Settings. MIRROR turns the mirror on. See README "Home Assistant".',
+      notes: 'Same values as the view workflow\'s Settings. MIRROR here is only the starting value: the view workflow\'s MIRROR (on CONFIG_TOPIC) takes over as soon as it is published. See README "Home Assistant".',
       parameters: {
         assignments: { assignments: rows.map(([k, v, type]) => ({ id: id('opt'), name: `cfg.${k}`, value: v, type })) },
         includeOtherFields: true, options: {}
@@ -413,6 +440,35 @@ function mirrorWorkflow() {
   return { name: 'Clawd (view mode mirror)', nodes, connections: c, active: false, settings: WF_SETTINGS, meta: { clawdEngine: E.ENGINE_VERSION } };
 }
 
+// ---- Home Assistant: the live settings as MQTT entities ------------------------------------
+// Components for an MQTT device discovery message ("cmps"): each one reads
+// CONFIG_TOPIC and writes CONFIG_SET_TOPIC. Merge them into your Clawd device's
+// discovery message, or publish them as they are (see README "Home Assistant").
+function haSettings() {
+  const d = E.DEFAULTS, cmps = {};
+  const common = (k, name, icon) => ({ name, unique_id: `clawd_set_${k.toLowerCase()}`, icon, entity_category: 'config',
+    command_topic: d.CONFIG_SET_TOPIC, state_topic: d.CONFIG_TOPIC });
+  for (const [k, kind, name, icon, unit, step] of E.LIVE_SETTINGS) {
+    const id = `set_${k.toLowerCase()}`;
+    if (kind === 'bool') {
+      cmps[id] = Object.assign({ p: 'switch' }, common(k, name, icon), {
+        payload_on: JSON.stringify({ [k]: true }), payload_off: JSON.stringify({ [k]: false }),
+        value_template: `{{ 'ON' if value_json.${k} else 'OFF' }}`, state_on: 'ON', state_off: 'OFF' });
+    } else if (kind === 'number') {
+      const [min, max] = E.NUM_RANGES[k];
+      cmps[id] = Object.assign({ p: 'number' }, common(k, name, icon), { mode: 'box', min, max, step },
+        unit ? { unit_of_measurement: unit } : {},
+        { command_template: `{"${k}": {{ value }} }`, value_template: `{{ value_json.${k} }}` });
+    } else {
+      cmps[id] = Object.assign({ p: 'text' }, common(k, name, icon), { max: k === 'PET_NAME' ? 12 : 64,
+        command_template: `{"${k}": {{ value | tojson }} }`, value_template: `{{ value_json.${k} }}` });
+    }
+  }
+  cmps.set_reset = Object.assign({ p: 'button' }, common('RESET', 'Reset settings', 'mdi:restore'), { payload_press: '{"reset":true}' });
+  delete cmps.set_reset.state_topic;
+  return { cmps };
+}
+
 // ---- main ---------------------------------------------------------------------------
 const json = (wf) => JSON.stringify(wf, null, 2) + '\n';
 const berry = (f) => minifyBerry(fs.readFileSync(path.join(ROOT, 'awtrix', f), 'utf8'));
@@ -420,6 +476,7 @@ const outputs = {
   'n8n/clawd-workflow.json': json(pushWorkflow()),
   'n8n/clawd-workflow-view.json': json(viewWorkflow()),
   'n8n/clawd-workflow-mirror.json': json(mirrorWorkflow()),
+  'homeassistant/mqtt-settings.json': json(haSettings()),
   'dist/clawd.ax': berry('clawd-view.ax'),
   'dist/clawdcore.ax': berry('clawdcore.ax')
 };

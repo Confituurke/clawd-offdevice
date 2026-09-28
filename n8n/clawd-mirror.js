@@ -118,13 +118,19 @@ function mirrorConfig(raw) {
 function mirrorGate(input, store, rawCfg) {
   const cfg = rawCfg && rawCfg.MIRROR_TOPIC && typeof rawCfg.MIRROR === 'boolean' ? rawCfg : mirrorConfig(rawCfg);
   input = input || { event: 'tick' };
+  if (input.event === 'config') {                          // MIRROR from the view workflow's settings
+    const on = input.mirror === true;
+    if (store.mirrorOn !== on) store.mirrorOn = on;
+    return null;
+  }
   if (input.event === 'active') {
     if (input.prefix !== undefined && input.prefix !== cfg.MQTT_PREFIX) return null;
     const fg = String(input.app || '').replace(/^"|"$/g, '') === cfg.APP_NAME;
     if (store.mirrorFg !== fg) store.mirrorFg = fg;
     return null;
   }
-  if (input.event !== 'tick' || !cfg.MIRROR || store.mirrorFg !== true) return null;
+  const on = typeof store.mirrorOn === 'boolean' ? store.mirrorOn : cfg.MIRROR;
+  if (input.event !== 'tick' || !on || store.mirrorFg !== true) return null;
   return { url: `http://${cfg.AWTRIX_HOST}/api/v1/display/screen`, topic: cfg.MIRROR_TOPIC };
 }
 

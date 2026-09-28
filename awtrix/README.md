@@ -19,12 +19,17 @@ Clawd app (Apps tab, gear button):
 | Setting | Default | |
 |---|---|---|
 | Brain | `n8n` | `n8n`: the rules run in n8n's view-mode workflow. `device`: the rules run on the clock in `clawdcore` |
-| Pet name | Clawd | shown in STATS |
-| Sound | off | effect tunes on the buzzer |
+| Pet name | Clawd | shown in STATS. n8n brain: kept in step with n8n's `PET_NAME`, both ways |
+| Sound | off | effect tunes on the buzzer. n8n brain: kept in step with n8n's `SOUND`, both ways |
 | State topic | `clawd/state` | n8n brain: where n8n publishes the state |
 | Command topic | `clawd/cmd` | n8n brain: where button actions go (Home Assistant uses n8n's `HA_TOPIC`, `clawd/ha`, instead). Device brain: where Home Assistant sends commands |
 
-`clawdcore` module (Modules card, gear button): hours until hungry (18), egg
+With the n8n brain the app reports its sound and name as `{"a":"cfg","sound":false,"name":"Clawd"}`
+on the command topic when the first state line arrives after it starts (saving a setting
+restarts it) and when n8n comes back after 10 minutes of silence; n8n takes a change made here
+and sends its own changes back through the app's settings.
+
+`clawdcore` module (Modules card, gear button): hours until hungry (12), egg
 hatch minutes (30), child/teen/adult ages (12/36/72 h), sleep window (22-8),
 night window (20-6), notifications (off). The clock's own time zone applies.
 

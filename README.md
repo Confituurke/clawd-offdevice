@@ -103,11 +103,12 @@ original Clawd script installed, delete it.
   button grid.
 - **See the pet:** add an MQTT camera on `MIRROR_TOPIC` (default `clawd/screen`) with
   `image_encoding: b64`; a picture card with `camera_view: live` then follows the clock.
-  - *Push mode:* turn on `MIRROR` in the push workflow's Settings; every pushed frame is mirrored.
+  - *Push mode:* turn on `MIRROR` (Settings node, or live - see [Changing settings](#changing-settings-while-it-runs)); every pushed frame is mirrored.
   - *View mode:* the clock draws the pet, so n8n has no frames of its own. Import
     [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json) as well, set its MQTT
     credential and Settings (same `AWTRIX_HOST`, `MQTT_PREFIX` and `APP_NAME` as the view
-    workflow), turn on `MIRROR` and publish it. While Clawd is on screen it reads the clock's
+    workflow) and publish it. It follows the view workflow's `MIRROR` (published on
+    `CONFIG_TOPIC`), so switch it there. While Clawd is on screen it reads the clock's
     `GET /api/v1/display/screen` every 10 s (2 s timeout, failures skipped) and publishes that
     as the PNG; with another app on screen it reads nothing and the camera keeps Clawd's last
     picture. Each read is a request the clock has to answer, so don't set the tick below 5 s.
@@ -116,7 +117,45 @@ original Clawd script installed, delete it.
   would store a row for every frame; a camera's stays `idle`.
 
 The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`, `play`,
-`clean`, `med`, `sleep` (toggle), `wake`, `stats`, `reset` (only while dead).
+`clean`, `med`, `sleep` (toggle), `wake`, `stats`, `reset` (only while dead), or
+`{"config":{...}}` to change settings.
+
+- **Settings in Home Assistant:** [`homeassistant/mqtt-settings.json`](homeassistant/mqtt-settings.json)
+  holds one control per live setting (switches, number boxes, text fields and a *Reset settings*
+  button), generated from the engine so its limits always match. Add its `cmps` to your Clawd
+  device's MQTT discovery message, or wrap them in a device of their own
+  (`{"dev":{"ids":["clawd_pet"],"name":"Clawd"},"o":{"name":"clawd"},"cmps":{...}}`) and
+  publish that, retained, to `homeassistant/device/clawd_pet/config`.
+
+## Changing settings while it runs
+
+The Settings node gives the defaults. These can also be changed while Clawd runs, and each
+change shows up everywhere:
+
+| Setting | Home Assistant | MQTT / webhook | on the clock (view mode) |
+|---|---|---|---|
+| `PET_NAME`, `SOUND` | ✅ | ✅ | ✅ Clawd's own settings |
+| `NOTIFY`, `SWITCH_ON_EVENTS`, `MIRROR`, `HUNGER_EMPTY_HOURS`, `EGG_HATCH_MIN`, `CHILD/TEEN/ADULT_AT_HOURS`, `SLEEP_FROM/TO`, `NIGHT_FROM/TO`, `TZ` | ✅ | ✅ | - |
+
+- **MQTT:** publish JSON with any of them to `CONFIG_SET_TOPIC` (default `clawd/config/set`),
+  e.g. `{"SOUND":true,"HUNGER_EMPTY_HOURS":10}`. Each value is checked like the Settings node's;
+  one that would be refused there (out of range, unknown zone, a child older than a teen...)
+  is left out. `{"SOUND":null}` goes back to the Settings node's value, `{"reset":true}` does
+  that for all of them. The same JSON works as `{"config":{...}}` on the webhook.
+- **Always current:** n8n publishes the settings in use, retained, to `CONFIG_TOPIC` (default
+  `clawd/config`) after every change and in answer to every settings message, so a Home
+  Assistant control snaps back when a value was refused. Changes are kept in the workflow's
+  static data and win over the Settings node until cleared.
+- **The clock (view mode):** Clawd's own *Sound* and *Pet name* follow along. n8n sends a change
+  to the app (`PATCH /api/v1/apps/clawd/config`), and the app reports its values to n8n when it
+  starts and when n8n comes back after a silence - so a change made in the clock's web UI (which
+  restarts the app) reaches n8n and Home Assistant too. n8n waits for that first report before
+  it sends anything, so an older `clawd` app is left alone; saving a setting restarts the app,
+  which the pet does not notice.
+- **Not live, on purpose:** topics, `AWTRIX_HOST`, `MQTT_PREFIX`, `APP_NAME` and the push-mode
+  tuning (`BURST`, `OFFSCREEN_REFRESH_SEC`, `STALE_AFTER_SEC`) stay in the Settings node: a
+  wrong topic or address set over MQTT would cut n8n off from the topic you'd fix it with.
+  The clock's own app time and mute are the clock's settings.
 
 ## Settings (n8n "Settings" node)
 
@@ -138,11 +177,12 @@ The webhook takes `POST /webhook/clawd-action` with `{"action":"feed"}`: `feed`,
 | `BURST` | `true` | push mode: extra frames every 250 ms while an effect plays |
 | `OFFSCREEN_REFRESH_SEC` | `30` | push mode: refresh interval while another app is shown |
 | `STALE_AFTER_SEC` | `90` | push mode: red frame after this long without updates (0 = off) |
-| `MIRROR` | `false` | push mode: also publish each pushed frame as a PNG (256x64, one 8x8 dot per LED) |
-| `MIRROR_TOPIC` | `clawd/screen` | where the PNG goes, base64, retained |
+| `MIRROR` | `false` | publish the screen as a PNG (256x64, one 8x8 dot per LED): push mode mirrors each pushed frame, view mode switches the mirror workflow |
+| `MIRROR_TOPIC` | `clawd/screen` | push mode: where the PNG goes, base64, retained (the mirror workflow has its own) |
 | `STATE_TOPIC` | `clawd/state` | state line out, for the view app and Home Assistant; in view mode it must match the app's setting |
 | `CMD_TOPIC` | `clawd/cmd` | view mode: the clock app's commands (must match its "Command topic"); they never switch apps |
 | `HA_TOPIC` | `clawd/ha` | Home Assistant's commands, both modes: apply the action and bring Clawd on screen. The MQTT trigger's topic list must contain it; may not equal `CMD_TOPIC` |
+| `CONFIG_TOPIC` / `CONFIG_SET_TOPIC` | `clawd/config` / `clawd/config/set` | settings in use (retained) / settings changes in; see [Changing settings](#changing-settings-while-it-runs). The MQTT trigger's topic list must contain `CONFIG_SET_TOPIC`, the mirror workflow's `CONFIG_TOPIC` |
 
 A value n8n can't use falls back to its default; the engine's output lists it under `warnings`.
 

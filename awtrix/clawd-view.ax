@@ -77,6 +77,12 @@ class Clawd
       if i < size(self.s) self.s[i] = v else self.s.push(v) end
       i += 1
     end
+    # First line since the app started (saving a setting restarts it), or n8n
+    # is back after a silence: tell n8n our sound and name, so a change made
+    # here reaches Home Assistant and n8n, and theirs can reach us.
+    if self.rx == 0 || now_ms() - self.rx > 600000
+      mqtt.publish(self.ct, "{\"a\":\"cfg\",\"sound\":" + (self.snd ? "true" : "false") + ",\"name\":\"" + string.tr(self.nm, "\"\\", "") + "\"}")
+    end
     self.rx = now_ms()
     self._u()
   end

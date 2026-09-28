@@ -41,6 +41,8 @@ const DEFAULTS = {
   STATE_TOPIC: 'clawd/state', // n8n -> device (view) and Home Assistant (both modes)
   CMD_TOPIC: 'clawd/cmd',     // the clock's view app -> n8n (view mode)
   HA_TOPIC: 'clawd/ha',       // Home Assistant -> n8n (both modes): apply and bring Clawd on screen
+  CONFIG_TOPIC: 'clawd/config',          // n8n -> anyone: the settings in use (retained JSON)
+  CONFIG_SET_TOPIC: 'clawd/config/set',  // anyone -> n8n: change settings, e.g. {"SOUND":true}
   OFFSCREEN_REFRESH_SEC: 30,  // push mode: refresh the frame this often while Clawd is not shown
   STALE_AFTER_SEC: 90,        // push mode: AWTRIX draws a red frame if no update arrives in time
   BURST: true,                // push mode: extra frames while an effect plays
@@ -112,6 +114,39 @@ const SND_SICK = 's:d=8,o=5,b=160:e,p,e';
 // Home Assistant / device command words -> action ids.
 const ACTIONS = { exit: 0, feed: 1, play: 2, clean: 3, med: 4, sleep: 5, stats: 6, reset: 7, wake: 8, warm: 9, newegg: 10 };
 
+// Settings that can be changed while running - from Home Assistant, over MQTT
+// (CONFIG_SET_TOPIC), through the webhook, or on the clock (view mode: sound
+// and name). The workflow's Settings node gives the defaults; a change made
+// this way is kept in the workflow's static data and wins over the node until
+// it is cleared ({"SOUND": null}, or {"reset": true} for all). Topics, the
+// clock's address and the MQTT prefix stay in the Settings node on purpose: a
+// wrong value there would cut n8n off from the topic you'd fix it with.
+// [key, kind, Home Assistant name, icon, unit, step]; SLEEP_/NIGHT_ are hours of the day (0-23)
+const NUM_RANGES = {
+  HUNGER_EMPTY_HOURS: [0.5, 24 * 30], EGG_HATCH_MIN: [1, 24 * 60],
+  CHILD_AT_HOURS: [0, 24 * 365], TEEN_AT_HOURS: [0, 24 * 365], ADULT_AT_HOURS: [0, 24 * 365],
+  SLEEP_FROM: [0, 23], SLEEP_TO: [0, 23], NIGHT_FROM: [0, 23], NIGHT_TO: [0, 23],
+  OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400]
+};
+const LIVE_SETTINGS = [
+  ['PET_NAME', 'text', 'Pet name', 'mdi:rename'],
+  ['SOUND', 'bool', 'Sound', 'mdi:volume-high'],
+  ['NOTIFY', 'bool', 'Notifications', 'mdi:bell-ring'],
+  ['SWITCH_ON_EVENTS', 'bool', 'Show on big events', 'mdi:monitor-eye'],
+  ['MIRROR', 'bool', 'Screen mirror', 'mdi:monitor-screenshot'],
+  ['HUNGER_EMPTY_HOURS', 'number', 'Hunger empties in', 'mdi:food-drumstick-off', 'h', 0.5],
+  ['EGG_HATCH_MIN', 'number', 'Egg hatches after', 'mdi:egg', 'min', 1],
+  ['CHILD_AT_HOURS', 'number', 'Child at age', 'mdi:baby-face-outline', 'h', 1],
+  ['TEEN_AT_HOURS', 'number', 'Teen at age', 'mdi:human-child', 'h', 1],
+  ['ADULT_AT_HOURS', 'number', 'Adult at age', 'mdi:human', 'h', 1],
+  ['SLEEP_FROM', 'number', 'Sleeps from', 'mdi:sleep', '', 1],
+  ['SLEEP_TO', 'number', 'Sleeps until', 'mdi:alarm', '', 1],
+  ['NIGHT_FROM', 'number', 'Night scene from', 'mdi:weather-night', '', 1],
+  ['NIGHT_TO', 'number', 'Night scene until', 'mdi:weather-sunset-up', '', 1],
+  ['TZ', 'text', 'Time zone', 'mdi:earth']
+];
+const LIVE_KEYS = LIVE_SETTINGS.map((x) => x[0]);
+
 // ---- helpers -----------------------------------------------------------------
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function c10k(v) { return clamp(v, 0, 10000); }
@@ -147,7 +182,7 @@ function makeConfig(raw) {
   const warnings = [];
   const pick = (k) => (raw[k] !== undefined && raw[k] !== null && raw[k] !== '' ? raw[k] : undefined);
 
-  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC', 'HA_TOPIC', 'MIRROR_TOPIC']) {
+  for (const k of ['AWTRIX_HOST', 'MQTT_PREFIX', 'APP_NAME', 'PET_NAME', 'STATE_TOPIC', 'CMD_TOPIC', 'HA_TOPIC', 'MIRROR_TOPIC', 'CONFIG_TOPIC', 'CONFIG_SET_TOPIC']) {
     if (pick(k) !== undefined) cfg[k] = String(pick(k)).trim();
   }
   cfg.AWTRIX_HOST = cfg.AWTRIX_HOST.replace(/^https?:\/\//, '').replace(/\/+$/, '');
@@ -164,13 +199,7 @@ function makeConfig(raw) {
     if (validTz(tz)) cfg.TZ = tz; else warnings.push('TZ');
   }
 
-  const nums = {
-    HUNGER_EMPTY_HOURS: [0.5, 24 * 30], EGG_HATCH_MIN: [1, 24 * 60],
-    CHILD_AT_HOURS: [0, 24 * 365], TEEN_AT_HOURS: [0, 24 * 365], ADULT_AT_HOURS: [0, 24 * 365],
-    SLEEP_FROM: [0, 23], SLEEP_TO: [0, 23], NIGHT_FROM: [0, 23], NIGHT_TO: [0, 23],
-    OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400]
-  };
-  for (const [k, [lo, hi]] of Object.entries(nums)) {
+  for (const [k, [lo, hi]] of Object.entries(NUM_RANGES)) {
     if (pick(k) === undefined) continue;
     const n = toNum(pick(k), NaN, lo, hi);
     if (Number.isFinite(n)) cfg[k] = n;
@@ -182,7 +211,9 @@ function makeConfig(raw) {
     cfg.CHILD_AT_HOURS = DEFAULTS.CHILD_AT_HOURS; cfg.TEEN_AT_HOURS = DEFAULTS.TEEN_AT_HOURS; cfg.ADULT_AT_HOURS = DEFAULTS.ADULT_AT_HOURS;
   }
   for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST', 'MIRROR']) {
-    if (pick(k) !== undefined) cfg[k] = toBool(pick(k), DEFAULTS[k]);
+    if (pick(k) === undefined) continue;
+    cfg[k] = toBool(pick(k), DEFAULTS[k]);
+    if (toBool(pick(k), null) === null) warnings.push(k);
   }
 
   // Derived timing. The original ran one decay step every 10 s and took
@@ -658,6 +689,94 @@ function checkNotify(s, cfg, nowMs) {
   return null;
 }
 
+// ---- live settings -----------------------------------------------------------------
+// The settings in use: the Settings node's values with the stored changes on top.
+function effectiveConfig(raw, store) {
+  const o = store.cfg && Object.keys(store.cfg).length ? store.cfg : null;
+  if (!o) return raw && raw.STEP_SEC ? raw : makeConfig(raw);
+  return makeConfig(Object.assign({}, raw, o));
+}
+
+// Apply a settings change ({"SOUND": true, "HUNGER_EMPTY_HOURS": 12}, a JSON
+// string or an object). Each key is checked the way the Settings node's values
+// are; a key that is unknown, not changeable here, or would be rejected there is
+// left out. null clears a stored change, {"reset": true} clears them all. The
+// growth ages are checked together, so they can be moved in one message.
+function applySettings(payload, store, raw) {
+  let o = payload;
+  if (typeof o === 'string') { try { o = JSON.parse(o); } catch (e) { return { accepted: [], rejected: ['(not JSON)'] }; } }
+  const res = { accepted: [], rejected: [] };
+  if (!o || typeof o !== 'object' || Array.isArray(o)) { res.rejected.push('(not an object)'); return res; }
+  store.cfg = store.cfg || {};
+  if (o.reset === true) { store.cfg = {}; res.accepted.push('reset'); }
+  const want = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (k === 'reset') continue;
+    if (!LIVE_KEYS.includes(k)) { res.rejected.push(k); continue; }
+    if (v === null) { delete store.cfg[k]; res.accepted.push(k); continue; }
+    want[k] = v;
+  }
+  const trial = makeConfig(Object.assign({}, raw || {}, store.cfg, want));
+  const before = makeConfig(Object.assign({}, raw || {}, store.cfg));
+  const growthBad = trial.warnings.includes('CHILD/TEEN/ADULT_AT_HOURS') && !before.warnings.includes('CHILD/TEEN/ADULT_AT_HOURS');
+  for (const k of Object.keys(want)) {
+    const bad = trial.warnings.includes(k) || (growthBad && /_AT_HOURS$/.test(k)) ||
+      (k === 'PET_NAME' && String(want[k]).trim() === '');
+    if (bad) res.rejected.push(k);
+    else { store.cfg[k] = trial[k]; res.accepted.push(k); }
+  }
+  return res;
+}
+
+// The settings message on CONFIG_TOPIC.
+function settingsMessage(cfg) {
+  const o = { MODE: cfg.MODE };
+  for (const k of LIVE_KEYS) o[k] = cfg[k];
+  return JSON.stringify(o);
+}
+
+// View mode: the clock app keeps its own copy of two settings, sound and the
+// pet's name. It reports them ({"a":"cfg",...} on CMD_TOPIC) when it starts -
+// saving a setting on the clock restarts it - and when n8n comes back after a
+// silence. dev.devSync is what the clock last reported matching. A value that
+// differs from ours while ours still equals dev.devSync was changed on the
+// clock, so we take it; otherwise ours changed since, so the clock gets ours.
+const DEVICE_KEYS = [['sound', 'SOUND'], ['name', 'PET_NAME']];
+function deviceSync(rep, store, dev, raw, cfg) {
+  const synced = dev.devSync || {};
+  const adopt = {};
+  for (const [dk, ck] of DEVICE_KEYS) {
+    if (rep[dk] === undefined) continue;
+    if (rep[dk] === cfg[ck]) synced[dk] = rep[dk];
+    else if (synced[dk] !== undefined && synced[dk] === cfg[ck]) adopt[ck] = rep[dk];
+  }
+  if (Object.keys(adopt).length) {
+    const r = applySettings(adopt, store, raw);
+    const now = effectiveConfig(raw, store);
+    for (const [dk, ck] of DEVICE_KEYS) if (r.accepted.includes(ck)) synced[dk] = now[ck];
+  }
+  dev.devSync = synced;
+}
+// What the clock still needs from us, or null. Nothing until the clock has
+// reported once: an older app that never reports would otherwise be sent (and
+// restarted by) the same settings every 10 minutes.
+function devicePatch(dev, cfg) {
+  if (!dev.devSync) return null;
+  const synced = dev.devSync;
+  const p = {};
+  for (const [dk, ck] of DEVICE_KEYS) if (synced[dk] !== cfg[ck]) p[dk] = cfg[ck];
+  return Object.keys(p).length ? p : null;
+}
+function parseDeviceReport(raw) {
+  let o = raw;
+  if (typeof raw === 'string') { try { o = JSON.parse(raw); } catch (e) { return null; } }
+  if (!o || typeof o !== 'object' || String(o.a || '').toLowerCase() !== 'cfg') return null;
+  const r = {};
+  if (typeof o.sound === 'boolean') r.sound = o.sound;
+  if (typeof o.name === 'string' && o.name.trim()) r.name = o.name.trim().slice(0, 12);
+  return r;
+}
+
 // ---- entry point -----------------------------------------------------------------
 // input:  { event: 'tick' }
 //         { event: 'button', btn: 'left'|'select'|'right', prefix }  (press edge only)
@@ -667,7 +786,6 @@ function checkNotify(s, cfg, nowMs) {
 // store:  a persistent object (n8n workflow static data)
 // Returns what the workflow should do; see README "How the workflow uses the result".
 function run(input, store, rawCfg, nowMs) {
-  const cfg = rawCfg && rawCfg.STEP_SEC ? rawCfg : makeConfig(rawCfg);
   nowMs = nowMs || Date.now();
   input = input || { event: 'tick' };
 
@@ -676,14 +794,24 @@ function run(input, store, rawCfg, nowMs) {
   if (!store.dev) store.dev = { fg: null, fgSince: 0, lastPush: 0, sig: '', lastPub: 0, pubSig: '' };
   const dev = store.dev;
 
-  const out = {
-    mode: cfg.MODE, ignore: false, push: false, payload: null, frames: [],
-    sound: null, notify: null, switchTo: false, publish: null, mirror: null,
-    base: `http://${cfg.AWTRIX_HOST}`, app: cfg.APP_NAME, warnings: cfg.warnings
-  };
+  // Settings changes, from Home Assistant / MQTT / the webhook or the clock.
+  const base = rawCfg && rawCfg.STEP_SEC ? rawCfg : makeConfig(rawCfg);
+  let ev = input.event;
+  let settingsResult = null;
+  if (ev === 'cmd' && input.topic !== undefined && input.topic !== '' && input.topic === base.CONFIG_SET_TOPIC) ev = 'config';
+  if (ev === 'config') settingsResult = applySettings(input.payload, store, rawCfg);
+  const report = ev === 'cmd' ? parseDeviceReport(input.payload) : null;
+  if (report) {
+    ev = 'device';
+    if (base.MODE !== 'view') return Object.assign(emptyOut(base), { ignore: true });
+    deviceSync(report, store, dev, rawCfg, effectiveConfig(rawCfg, store));
+  }
+  const cfg = effectiveConfig(rawCfg, store);
+
+  const out = emptyOut(cfg);
+  if (settingsResult) out.settings = settingsResult;
 
   // Messages meant for another device, or of no interest in this mode.
-  const ev = input.event;
   if ((ev === 'button' || ev === 'active') && input.prefix !== undefined && input.prefix !== cfg.MQTT_PREFIX) {
     out.ignore = true; return out;
   }
@@ -771,6 +899,28 @@ function run(input, store, rawCfg, nowMs) {
     }
   }
 
+  // The settings in use, retained on CONFIG_TOPIC: on every change (wherever it
+  // came from), as the answer to every settings message - so a Home Assistant
+  // control snaps back when a value is refused - and every 6 h.
+  {
+    const msg = settingsMessage(cfg);
+    if (ev === 'config' || msg !== dev.cfgMsg || nowMs - (dev.cfgPub || 0) >= 6 * 3600000) {
+      out.config = { topic: cfg.CONFIG_TOPIC, message: msg, retain: true };
+      dev.cfgMsg = msg; dev.cfgPub = nowMs;
+    }
+  }
+  // View mode: send the clock app our sound and name when they differ from what
+  // it last reported - at once after a change, then every 10 min until the
+  // clock confirms (a save restarts the app, which reports again).
+  if (cfg.MODE === 'view') {
+    const p = devicePatch(dev, cfg);
+    const key = p ? JSON.stringify(p) : '';
+    if (p && (key !== dev.patchKey || nowMs - (dev.patchAt || 0) >= 600000)) {
+      out.devicePatch = p; dev.patchKey = key; dev.patchAt = nowMs;
+    }
+    if (!p) dev.patchKey = '';
+  }
+
   // Should this run's state be saved? Every event and every visible change
   // is; a plain tick that only moved the clock forward is not, at most once a
   // minute. See runN8n() for why that matters.
@@ -779,12 +929,20 @@ function run(input, store, rawCfg, nowMs) {
   return out;
 }
 
+function emptyOut(cfg) {
+  return {
+    mode: cfg.MODE, ignore: false, push: false, payload: null, frames: [],
+    sound: null, notify: null, switchTo: false, publish: null, mirror: null, config: null, devicePatch: null,
+    base: `http://${cfg.AWTRIX_HOST}`, app: cfg.APP_NAME, warnings: cfg.warnings
+  };
+}
+
 // Everything in the state except the counters that only move with the clock.
 function significant(s, dev) {
   const o = Object.assign({}, s);
   delete o.last_ts; delete o.decAcc; delete o.age; delete o.pt; delete o.saved;
   return JSON.stringify(o) + '|' + dev.fg + '|' + dev.sig + '|' + dev.pubSig + '|' +
-    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub;
+    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub + '|' + dev.cfgPub + '|' + dev.patchKey + '|' + dev.patchAt;
 }
 
 // The n8n entry point. n8n loads the workflow's static data when a run starts
@@ -797,10 +955,11 @@ function significant(s, dev) {
 function runN8n(input, staticData, rawCfg, nowMs) {
   const work = {
     clawd: staticData.clawd ? JSON.parse(JSON.stringify(staticData.clawd)) : undefined,
-    dev: staticData.dev ? JSON.parse(JSON.stringify(staticData.dev)) : undefined
+    dev: staticData.dev ? JSON.parse(JSON.stringify(staticData.dev)) : undefined,
+    cfg: staticData.cfg ? JSON.parse(JSON.stringify(staticData.cfg)) : undefined
   };
   const r = run(input, work, rawCfg, nowMs);
-  if (r.commit) { staticData.clawd = work.clawd; staticData.dev = work.dev; }
+  if (r.commit) { staticData.clawd = work.clawd; staticData.dev = work.dev; if (work.cfg) staticData.cfg = work.cfg; }
   return r;
 }
 
@@ -808,6 +967,7 @@ const ClawdEngine = {
   ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, STATS_AFTER_MS, statsScrollMs,
   makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
   checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
-  stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n
+  stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n,
+  LIVE_SETTINGS, LIVE_KEYS, NUM_RANGES, effectiveConfig, applySettings, settingsMessage, deviceSync, devicePatch, parseDeviceReport
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = ClawdEngine;

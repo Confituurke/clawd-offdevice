@@ -557,3 +557,112 @@ test('review fixes: egg outage capped, view stats, monotonic effects, clamp warn
   const w = E.makeConfig({ SLEEP_FROM: 25, HUNGER_EMPTY_HOURS: 0 }).warnings;
   assert.ok(w.includes('SLEEP_FROM') && w.includes('HUNGER_EMPTY_HOURS'), 'clamped values are reported');
 });
+
+// ---- live settings -----------------------------------------------------------------
+const setMsg = (payload) => ({ event: 'cmd', topic: 'clawd/config/set', payload: typeof payload === 'string' ? payload : JSON.stringify(payload) });
+const settingsOf = (r) => JSON.parse(r.config.message);
+
+test('settings: a change over MQTT is checked, kept and used, in both modes', () => {
+  for (const MODE of ['push', 'view']) {
+    const store = {};
+    const cfg = { MODE };
+    E.run({ event: 'tick' }, store, cfg, T0);
+    const r = E.run(setMsg({ SOUND: true, HUNGER_EMPTY_HOURS: 6, PET_NAME: '  Krabbie  ', TZ: 'America/New_York' }), store, cfg, T0 + 1000);
+    assert.deepEqual(r.settings, { accepted: ['SOUND', 'HUNGER_EMPTY_HOURS', 'PET_NAME', 'TZ'], rejected: [] }, MODE);
+    const now = settingsOf(r);
+    assert.equal(now.SOUND, true); assert.equal(now.HUNGER_EMPTY_HOURS, 6); assert.equal(now.PET_NAME, 'Krabbie'); assert.equal(now.TZ, 'America/New_York');
+    assert.equal(r.config.topic, 'clawd/config'); assert.equal(r.config.retain, true);
+    const eff = E.effectiveConfig(cfg, store);
+    assert.ok(Math.abs(eff.STEP_SEC - 15.12) < 0.01, 'the new speed drives the decay');
+    assert.match(E.statsText(store.clawd, eff), /^Krabbie  AGE/, 'the new name is used');
+  }
+});
+
+test('settings: refused values, unknown or fixed keys; null and reset undo changes', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  let r = E.run(setMsg({ SOUND: 'maybe', HUNGER_EMPTY_HOURS: 9999, TZ: 'Mars/Olympus', PET_NAME: '   ', AWTRIX_HOST: '1.2.3.4', MQTT_PREFIX: 'x', HA_TOPIC: 'y', BOGUS: 1 }), store, {}, T0 + 1000);
+  assert.deepEqual(r.settings.accepted, []);
+  assert.deepEqual(r.settings.rejected.sort(), ['AWTRIX_HOST', 'BOGUS', 'HA_TOPIC', 'HUNGER_EMPTY_HOURS', 'MQTT_PREFIX', 'PET_NAME', 'SOUND', 'TZ']);
+  assert.deepEqual(store.cfg, {});
+  assert.ok(r.config, 'refusals are answered with the settings in use, so controls snap back');
+  assert.equal(E.run(setMsg('not json'), store, {}, T0 + 1500).settings.rejected[0], '(not JSON)');
+
+  // growth ages are checked together: moving all three in one message works, one alone out of order does not
+  r = E.run(setMsg({ CHILD_AT_HOURS: 48 }), store, {}, T0 + 2000);
+  assert.deepEqual(r.settings.rejected, ['CHILD_AT_HOURS'], 'child after teen is refused');
+  r = E.run(setMsg({ CHILD_AT_HOURS: 48, TEEN_AT_HOURS: 96, ADULT_AT_HOURS: 144 }), store, {}, T0 + 3000);
+  assert.deepEqual(r.settings.accepted, ['CHILD_AT_HOURS', 'TEEN_AT_HOURS', 'ADULT_AT_HOURS']);
+
+  E.run(setMsg({ SOUND: true, NOTIFY: true }), store, {}, T0 + 4000);
+  r = E.run(setMsg({ SOUND: null }), store, {}, T0 + 5000);
+  assert.equal(settingsOf(r).SOUND, false, 'null goes back to the Settings node value');
+  assert.equal(settingsOf(r).NOTIFY, true);
+  r = E.run(setMsg({ reset: true }), store, { NOTIFY: false }, T0 + 6000);
+  assert.deepEqual(store.cfg, {});
+  assert.equal(settingsOf(r).NOTIFY, false); assert.equal(settingsOf(r).CHILD_AT_HOURS, 12);
+});
+
+test('settings: the Settings node gives the defaults; stored changes win until cleared', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, { SOUND: true }, T0);
+  E.run(setMsg({ SOUND: false }), store, { SOUND: true }, T0 + 1000);
+  assert.equal(E.effectiveConfig({ SOUND: true }, store).SOUND, false);
+  assert.equal(E.effectiveConfig({ SOUND: true, NOTIFY: true }, store).NOTIFY, true, 'other node values still apply');
+});
+
+test('settings: published once when they change, on every settings message, and every 6 h', () => {
+  const store = {};
+  assert.ok(E.run({ event: 'tick' }, store, {}, T0).config, 'first run publishes');
+  assert.equal(E.run({ event: 'tick' }, store, {}, T0 + 2000).config, null, 'not on plain ticks');
+  assert.ok(E.run({ event: 'tick' }, store, { NOTIFY: true }, T0 + 4000).config, 'a Settings node edit is published');
+  assert.ok(E.run(setMsg({}), store, { NOTIFY: true }, T0 + 6000).config, 'an empty settings message is answered');
+  assert.ok(E.run({ event: 'tick' }, store, { NOTIFY: true }, T0 + 6 * H + 7000).config, 'and again after 6 h');
+});
+
+test('settings: kept in the workflow static data between runs', () => {
+  const sd = {};
+  E.runN8n({ event: 'tick' }, sd, {}, T0);
+  E.runN8n(setMsg({ SOUND: true }), sd, {}, T0 + 1000);
+  assert.deepEqual(sd.cfg, { SOUND: true });
+  assert.equal(JSON.parse(E.runN8n(setMsg({}), sd, {}, T0 + 2000).config.message).SOUND, true);
+});
+
+test('settings: the webhook and a live MIRROR switch work too', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  const r = E.run({ event: 'config', payload: { MIRROR: true } }, store, {}, T0 + 1000);
+  assert.deepEqual(r.settings.accepted, ['MIRROR']);
+  const f = E.run({ event: 'active', app: 'clawd', prefix: 'awtrixNG' }, store, {}, T0 + 2000);
+  assert.equal(f.mirror, 'clawd/screen', 'push mode mirrors once MIRROR is switched on live');
+});
+
+test('view: the clock app\'s sound and name follow the settings, and a change made on the clock is taken', () => {
+  const cfg = { MODE: 'view' };
+  const rep = (sound, name) => ({ event: 'cmd', topic: 'clawd/cmd', payload: JSON.stringify({ a: 'cfg', sound, name }) });
+  const store = {};
+  let r = E.run({ event: 'tick' }, store, cfg, T0);
+  assert.equal(r.devicePatch, null, 'nothing is sent before the clock has reported (an older app never does)');
+
+  r = E.run(rep(true, 'Clawd'), store, cfg, T0 + 1000);
+  assert.deepEqual(r.devicePatch, { sound: false }, 'first report: our values win');
+  assert.equal(r.ignore, false);
+  assert.equal(E.run({ event: 'tick' }, store, cfg, T0 + 2000).devicePatch, null, 'sent once, not on every tick');
+  assert.deepEqual(E.run({ event: 'tick' }, store, cfg, T0 + 1000 + 600000).devicePatch, { sound: false }, 'resent after 10 min until confirmed');
+  r = E.run(rep(false, 'Clawd'), store, cfg, T0 + 700000);
+  assert.equal(r.devicePatch, null, 'confirmed');
+
+  r = E.run(rep(true, 'Krabbie'), store, cfg, T0 + 800000);        // changed on the clock
+  assert.equal(settingsOf(r).SOUND, true); assert.equal(settingsOf(r).PET_NAME, 'Krabbie');
+  assert.equal(r.devicePatch, null, 'taken, nothing to send back');
+
+  r = E.run(setMsg({ SOUND: false }), store, cfg, T0 + 900000);     // changed in Home Assistant
+  assert.deepEqual(r.devicePatch, { sound: false }, 'sent to the clock at once');
+  r = E.run(rep(true, 'Krabbie'), store, cfg, T0 + 901000);        // the clock has not applied it yet
+  assert.equal(E.effectiveConfig(cfg, store).SOUND, false, 'a clock that is behind is not taken as a change');
+  assert.equal(r.config, null, 'so nothing to republish');
+
+  const push = {};
+  E.run({ event: 'tick' }, push, {}, T0);
+  assert.equal(E.run(rep(true, 'X'), push, {}, T0 + 1000).ignore, true, 'push mode has no clock app');
+});

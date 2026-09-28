@@ -65,6 +65,9 @@ var v = int(l[i])
 if i < size(self.s) self.s[i] = v else self.s.push(v) end
 i += 1
 end
+if self.rx == 0 || now_ms() - self.rx > 600000
+mqtt.publish(self.ct, "{\"a\":\"cfg\",\"sound\":" + (self.snd ? "true" : "false") + ",\"name\":\"" + string.tr(self.nm, "\"\\", "") + "\"}")
+end
 self.rx = now_ms()
 self._u()
 end

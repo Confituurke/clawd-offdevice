@@ -55,7 +55,7 @@ for (const f of FILES) {
     for (const n of http) {
       assert.equal(n.onError, 'continueRegularOutput', n.name);
       assert.ok(n.parameters.options.timeout <= 3000, n.name);
-      assert.match(n.parameters.url, /\/api\/v1\/(apps\/pushed|apps\/active|audio\/play|notifications)/, n.name);
+      assert.match(n.parameters.url, /\/api\/v1\/(apps\/pushed|apps\/active|audio\/play|notifications|apps\/\{\{ \$json\.app \}\}\/config)/, n.name);
       assert.doesNotMatch(n.parameters.url, /sounds\/play/);
     }
   });
@@ -111,7 +111,7 @@ test('push workflow: listens on Home Assistant\'s topic and publishes the retain
 test('view workflow: listens on the clock\'s and Home Assistant\'s topics and passes the topic on', () => {
   const wf = load(FILES[1]);
   const trg = wf.nodes.find((n) => n.name === 'Device Commands (MQTT)');
-  assert.deepEqual(trg.parameters.topics.split(','), ['clawd/cmd', 'clawd/ha']);
+  assert.deepEqual(trg.parameters.topics.split(','), ['clawd/cmd', 'clawd/ha', 'clawd/config/set']);
   const node = wf.nodes.find((n) => n.name === 'Command Event');
   assert.deepEqual(runCode(node.parameters.jsCode, [{ topic: 'clawd/ha', message: 'feed' }], {}),
     [{ event: 'cmd', payload: 'feed', topic: 'clawd/ha' }]);
@@ -157,7 +157,7 @@ test('view mirror workflow: reads the screen only while Clawd is shown and publi
   }
   assert.equal(wf.settings.saveDataSuccessExecution, 'none');
   const node = (n) => wf.nodes.find((x) => x.name === n);
-  assert.equal(node('App On Screen (MQTT)').parameters.topics, '+/state/apps/active');
+  assert.equal(node('App On Screen (MQTT)').parameters.topics, '+/state/apps/active,clawd/config');
   const every = node('Tick every 10s').parameters.rule.interval[0];
   assert.ok(every.field === 'seconds' && every.secondsInterval >= 5 && every.secondsInterval <= 10);
   const cfg = Object.fromEntries(node('Settings').parameters.assignments.assignments.map((a) => [a.name, a.value]));
@@ -184,4 +184,83 @@ test('view mirror workflow: reads the screen only while Clawd is shown and publi
   assert.equal(png.length, 1);
   assert.equal(Buffer.from(png[0].message, 'base64').subarray(1, 4).toString(), 'PNG');
   assert.deepEqual(runCode(node('Screen To PNG').parameters.jsCode, [{ error: { message: 'timeout of 2000ms exceeded' } }], {}), [], 'errors are skipped');
+});
+
+test('settings: both workflows take changes on CONFIG_SET_TOPIC and the webhook, and publish them retained', () => {
+  const push = load(FILES[0]), view = load(FILES[1]);
+  assert.ok(push.nodes.find((n) => n.name === 'AWTRIX MQTT').parameters.topics.split(',').includes('clawd/config/set'));
+  assert.ok(view.nodes.find((n) => n.name === 'Device Commands (MQTT)').parameters.topics.split(',').includes('clawd/config/set'));
+  for (const wf of [push, view]) {
+    const pub = wf.nodes.find((n) => n.name === 'Publish Settings');
+    assert.equal(pub.parameters.options.retain, true);
+    assert.equal(pub.parameters.topic, '={{ $json.config.topic }}');
+    assert.ok(wf.connections['Has Settings'].main[0].some((l) => l.node === 'Publish Settings'));
+    assert.ok(wf.connections['Clawd Engine'].main[0].some((l) => l.node === 'Has Settings'));
+    const names = wf.nodes.find((n) => n.name === 'Settings').parameters.assignments.assignments.map((a) => a.name);
+    for (const k of ['cfg.MIRROR', 'cfg.CONFIG_TOPIC', 'cfg.CONFIG_SET_TOPIC']) assert.ok(names.includes(k), k);
+    const ha = wf.nodes.find((n) => n.name === 'HA Event');
+    assert.deepEqual(runCode(ha.parameters.jsCode, [{ body: { config: { SOUND: true } } }], {}), [{ event: 'config', payload: { SOUND: true } }]);
+  }
+  const ev = runCode(push.nodes.find((n) => n.name === 'MQTT Event').parameters.jsCode, [{ topic: 'clawd/config/set', message: '{"SOUND":true}' }], {});
+  assert.deepEqual(ev, [{ event: 'cmd', payload: '{"SOUND":true}', topic: 'clawd/config/set' }]);
+});
+
+test('view workflow: sends the clock app its settings in the background', () => {
+  const wf = load(FILES[1]);
+  const sub = subOf(wf);
+  const n = sub.nodes.find((x) => x.name === 'Send Device Settings');
+  assert.equal(n.parameters.method, 'PATCH');
+  assert.equal(n.parameters.url, '={{ $json.base }}/api/v1/apps/{{ $json.app }}/config');
+  assert.equal(n.parameters.jsonBody, '={{ JSON.stringify($json.devicePatch) }}');
+  assert.match(wf.nodes.find((x) => x.name === 'Anything To Send').parameters.conditions.conditions[0].leftValue, /devicePatch/);
+  assert.equal(subOf(load(FILES[0])).nodes.find((x) => x.name === 'Send Device Settings'), undefined, 'push mode has no clock app');
+});
+
+test('view mirror workflow: follows MIRROR from the settings topic', () => {
+  const wf = load('n8n/clawd-workflow-mirror.json');
+  const node = (n) => wf.nodes.find((x) => x.name === n);
+  const cfgIn = { MIRROR: false, AWTRIX_HOST: 'clock', MQTT_PREFIX: 'awtrix', APP_NAME: 'clawd', MIRROR_TOPIC: 'clawd/screen' };
+  const ev = runCode(node('Active Event').parameters.jsCode, [{ topic: 'clawd/config', message: '{"MODE":"view","MIRROR":true}' }, { topic: 'clawd/config', message: 'garbage' }], {});
+  assert.deepEqual(ev, [{ event: 'config', mirror: true }]);
+  const store = {};
+  const gate = (item) => runCode(node('Mirror Gate').parameters.jsCode, [{ ...item, cfg: cfgIn }], store);
+  gate({ event: 'active', app: 'clawd', prefix: 'awtrix' });
+  assert.deepEqual(gate({ event: 'tick' }), [], 'off: the node value');
+  assert.deepEqual(gate(ev[0]), [], 'a settings message never reads the screen');
+  assert.equal(gate({ event: 'tick' }).length, 1, 'switched on over MQTT');
+  gate({ event: 'config', mirror: false });
+  assert.deepEqual(gate({ event: 'tick' }), [], 'and off again');
+});
+
+test('Home Assistant settings entities: one per live setting, and every command they send is accepted', () => {
+  const E = require('../n8n/clawd-engine.js');
+  const { cmps } = load('homeassistant/mqtt-settings.json');
+  const byKey = {};
+  for (const c of Object.values(cmps)) {
+    assert.equal(c.command_topic, 'clawd/config/set', c.name);
+    assert.equal(c.entity_category, 'config');
+    const m = /"([A-Z_]+)"/.exec(c.payload_on || c.command_template || c.payload_press);
+    byKey[m ? m[1] : 'reset'] = c;
+  }
+  assert.deepEqual(Object.keys(byKey).filter((k) => k !== 'reset').sort(), [...E.LIVE_KEYS].sort());
+  assert.equal(new Set(Object.values(cmps).map((c) => c.unique_id)).size, Object.keys(cmps).length, 'unique ids');
+
+  // What Home Assistant would send (numbers as HA formats them, text through tojson),
+  // and what the state template would read back.
+  const samples = { PET_NAME: 'Mr "Pinch"', TZ: 'Europe/Paris', HUNGER_EMPTY_HOURS: 9.5, EGG_HATCH_MIN: 20, CHILD_AT_HOURS: 10,
+    TEEN_AT_HOURS: 30, ADULT_AT_HOURS: 60, SLEEP_FROM: 23, SLEEP_TO: 7, NIGHT_FROM: 21, NIGHT_TO: 5 };
+  const store = {};
+  for (const [k, c] of Object.entries(byKey)) {
+    let payload;
+    if (k === 'reset') continue;
+    if (c.p === 'switch') payload = c.payload_on;
+    else if (c.p === 'number') payload = c.command_template.replace('{{ value }}', samples[k].toFixed(1));
+    else payload = c.command_template.replace('{{ value | tojson }}', JSON.stringify(samples[k]));
+    const r = E.applySettings(payload, store, {});
+    assert.deepEqual(r.accepted, [k], `${k}: ${payload}`);
+    const read = /value_json\.([A-Z_]+)/.exec(c.value_template)[1];
+    assert.equal(read, k, `${k} reads its own value`);
+  }
+  assert.equal(E.effectiveConfig({}, store).PET_NAME, 'Mr "Pinch"');
+  assert.deepEqual(E.applySettings(byKey.reset.payload_press, store, {}).accepted, ['reset']);
 });

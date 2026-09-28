@@ -29,9 +29,13 @@ on the command topic when the first state line arrives after it starts (saving a
 restarts it) and when n8n comes back after 10 minutes of silence; n8n takes a change made here
 and sends its own changes back through the app's settings.
 
-`clawdcore` module (Modules card, gear button): hours until hungry (12), egg
-hatch minutes (30), child/teen/adult ages (12/36/72 h), sleep window (22-8),
-night window (20-6), notifications (off). The clock's own time zone applies.
+`clawdcore` module (Modules card, gear button): **Difficulty** (easy, normal,
+hard - the same presets as in n8n, see [docs/REFERENCE.md](../docs/REFERENCE.md#difficulty)),
+or `custom` to use its own values: hours until hungry (12), egg hatch minutes
+(30), child/teen/adult/elder ages (12/36/72/168 h), elder lifespan (96 h),
+legend after (48 h), sickness chance (2%), care for a happy/grumpy adult
+(200/-100). Also the sleep window (22-8), night window (20-6) and
+notifications (off). The clock's own time zone applies.
 
 ## How the pieces talk
 
@@ -42,14 +46,15 @@ whenever something visible changes, and at least once a minute:
 |---|---|---|---|---|
 | 0 | protocol version (2) | | 11 | asleep (0/1) |
 | 1 | stage: 0 egg, 1 alive, 2 dead | | 12 | night scenery (0/1) |
-| 2 | evolution 0-4 | | 13 | generation |
-| 3 | adult look: 0 happy, 1 normal, 2 grumpy | | 14 | care score |
+| 2 | evolution: 0 egg, 1 baby, 2 child, 3 teen, 4 adult, 5 elder, 6 legend | | 13 | generation |
+| 3 | adult (and elder) look: 0 happy, 1 normal, 2 grumpy | | 14 | care score |
 | 4-7 | hunger, happiness, energy, cleanliness (0-10000) | | 15 | age in seconds |
-| 8 | health (0-10000) | | 16 | last effect id (1 feed ... 9 death) |
+| 8 | health (0-10000) | | 16 | last effect id (1 feed ... 9 death, 10 show stats, 11 passed away of old age) |
 | 9 | poops (0-3) | | 17 | effect counter (changes = play the effect) |
 | 10 | sick (0/1) | | 18 | Star Catch hits of the last PLAY |
 | | | | 19 | n8n's clock (epoch seconds) |
 | | | | 20, 21 | egg warmth and hatch time (seconds) |
+| | | | 22 | passed away of old age (0/1); newer than the rest - an app reading 22 fields treats it as 0 |
 
 The app sends actions to the command topic as `{"a":"feed"}`: `feed`, `play`
 (with `"hits":0-3` after Star Catch), `clean`, `med`, `sleep`, `wake`, `warm`

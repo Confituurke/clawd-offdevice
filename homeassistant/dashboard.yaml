@@ -4,6 +4,7 @@
 # Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
 # pencil icon > three dots > "Raw configuration editor", replace everything with this file.
 #
+# Two pages: Clawd (the pet, its stats and care buttons) and Settings (Settings and Advanced Settings).
 # The screen card only shows a picture once the mirror is on (README, "See the pet").
 views:
   - title: Clawd
@@ -109,6 +110,12 @@ views:
               perform_action: button.press
               target:
                 entity_id: button.clawd_new_egg
+  - title: Settings
+    path: settings
+    icon: mdi:cog
+    type: sections
+    max_columns: 2
+    sections:
       - type: grid
         cards:
           - type: heading
@@ -116,19 +123,39 @@ views:
             icon: mdi:cog
           - type: entities
             entities:
+              - select.clawd_difficulty
               - text.clawd_pet_name
               - switch.clawd_sound
               - switch.clawd_notifications
               - switch.clawd_show_on_big_events
               - switch.clawd_screen_mirror
+              - button.clawd_reset_settings
+          - type: markdown
+            content: >-
+              **Difficulty** sets everything under *Advanced Settings*. Easy: hungry after 18 h,
+              grows up faster, rarely ill. Hard: hungry after 8 h, grows up slower, ill more often,
+              shorter old age. Changing one advanced value keeps the rest of the difficulty;
+              **Reset settings** goes back to the plain difficulty.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Advanced Settings
+            icon: mdi:tune
+          - type: entities
+            entities:
               - number.clawd_hunger_empties_in
               - number.clawd_egg_hatches_after
               - number.clawd_child_at_age
               - number.clawd_teen_at_age
               - number.clawd_adult_at_age
+              - number.clawd_elder_at_age
+              - number.clawd_elder_lifespan
+              - number.clawd_legend_after
+              - number.clawd_sickness_chance
+              - number.clawd_care_for_a_happy_adult
+              - number.clawd_care_for_a_grumpy_adult
               - number.clawd_sleeps_from
               - number.clawd_sleeps_until
               - number.clawd_night_scene_from
               - number.clawd_night_scene_until
               - text.clawd_time_zone
-              - button.clawd_reset_settings

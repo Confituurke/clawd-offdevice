@@ -4,6 +4,8 @@ The details behind the [README](../README.md): every setting, how settings reach
 channel, the Home Assistant options, how it works, and how to work on it.
 
 - [Settings](#settings)
+- [Difficulty](#difficulty)
+- [Life stages](#life-stages)
 - [Changing settings while it runs](#changing-settings-while-it-runs)
 - [Home Assistant](#home-assistant)
 - [Seeing the pet (screen mirror)](#seeing-the-pet-screen-mirror)
@@ -24,9 +26,14 @@ listed under `warnings` in the engine's output.
 | `APP_NAME` | `clawd` | pushed app name (push), or the name of the script on the clock (view) |
 | `PET_NAME` | `Clawd` | up to 12 characters |
 | `TZ` | *(empty)* | time zone for sleep and night, e.g. `America/New_York`; empty uses n8n's own time zone |
-| `HUNGER_EMPTY_HOURS` | `12` | awake, full to empty. The original is ~4 h (`3.97`), which starves an unfed pet overnight; at 12 h a pet that goes to bed at 60% hunger still has food in the morning, and ~4 feeds a day keep it fed |
-| `EGG_HATCH_MIN` | `30` | |
-| `CHILD_AT_HOURS` / `TEEN_AT_HOURS` / `ADULT_AT_HOURS` | `12` / `36` / `72` | |
+| `DIFFICULTY` | `normal` | `easy`, `normal` or `hard`: fills in the values below ([Difficulty](#difficulty)) |
+| `HUNGER_EMPTY_HOURS` | *(difficulty)* | awake, full to empty. Normal 12 h; the original is ~4 h (`3.97`), which starves an unfed pet overnight |
+| `EGG_HATCH_MIN` | *(difficulty)* | |
+| `CHILD_AT_HOURS` / `TEEN_AT_HOURS` / `ADULT_AT_HOURS` / `ELDER_AT_HOURS` | *(difficulty)* | ages at which Clawd grows up |
+| `ELDER_LIFE_HOURS` | *(difficulty)* | how long an elder lives: x1.5 if raised happy, x0.5 if grumpy |
+| `LEGEND_AFTER_HOURS` | *(difficulty)* | healthy hours a happy elder needs to become a legend |
+| `SICK_CHANCE_PCT` | *(difficulty)* | chance per decay step to fall ill while neglected |
+| `CARE_HAPPY` / `CARE_GRUMPY` | *(difficulty)* | care score for a happy / grumpy adult |
 | `SLEEP_FROM` / `SLEEP_TO` | `22` / `8` | auto-sleep, hours of the day |
 | `NIGHT_FROM` / `NIGHT_TO` | `20` / `6` | night scenery |
 | `SOUND` | `false` | effect tunes on the buzzer |
@@ -42,12 +49,48 @@ listed under `warnings` in the engine's output.
 | `HA_TOPIC` | `clawd/ha` | Home Assistant's actions: apply and bring Clawd on screen. Not the same as `CMD_TOPIC` |
 | `CONFIG_TOPIC` / `CONFIG_SET_TOPIC` | `clawd/config` / `clawd/config/set` | settings in use (retained) / settings changes |
 
+The *(difficulty)* rows are empty in the Settings node: leave them empty to follow `DIFFICULTY`,
+or fill one in to override just that value.
+
 If you change a topic, also change it in the MQTT trigger node's topic list (and, for
 `CONFIG_TOPIC`, in the mirror workflow).
 
 The clock app (view and device mode) has a few settings of its own in the clock's web UI
 (Apps, gear button); see [awtrix/README.md](../awtrix/README.md). The `clawdcore` module (device
 mode) has the pet's rules as its settings.
+
+## Difficulty
+
+| | Easy | Normal | Hard |
+|---|---|---|---|
+| Hungry after (`HUNGER_EMPTY_HOURS`) | 18 h | 12 h | 8 h |
+| Egg hatches after | 15 min | 30 min | 45 min |
+| Child / teen / adult / elder at | 8 / 24 / 48 / 144 h | 12 / 36 / 72 / 168 h | 16 / 48 / 96 / 192 h |
+| Elder lifespan (x1.5 happy, x0.5 grumpy) | 144 h | 96 h | 72 h |
+| Legend after (healthy hours as a happy elder) | 24 h | 48 h | 72 h |
+| Sickness chance while neglected | 1% | 2% | 3% |
+| Care for a happy / grumpy adult | 150 / -150 | 200 / -100 | 250 / -50 |
+
+Normal is the original game's rules at a friendlier speed. Easy is forgiving: slower hunger, faster
+growing up, rarely ill, and an easier path to a happy adult and a long old age. Hard is the
+opposite; a pet that goes to bed at 60% hunger wakes up hungry (but alive).
+
+Values combine in this order, later wins: the difficulty → a value filled in in the Settings node →
+a value changed while running. Choosing a difficulty while running (Home Assistant or
+`{"DIFFICULTY":"hard"}`) clears earlier live changes to its values, so the preset really applies;
+values filled in in the Settings node still win.
+
+## Life stages
+
+Egg → baby → child → teen → **adult** (happy, normal or grumpy, from the care score) → **elder**
+(`ELDER_AT_HOURS`) → passes away of old age after `ELDER_LIFE_HOURS` (x1.5 for a happy elder,
+x1 normal, x0.5 grumpy). A happy elder that stays healthy (health 80% or more, not ill) for
+`LEGEND_AFTER_HOURS` becomes a **legend**: golden, and it lives `ELDER_LIFE_HOURS` x1.5 more from
+that moment. A legend's egg hatches in half the time and starts with 50 care.
+
+Passing away of old age is peaceful: Clawd is shown as a spirit with a halo instead of the
+tombstone, with its own tune, and the NEW EGG? button works as after any death. Neglect still kills
+at any age, as in the original.
 
 ## Changing settings while it runs
 
@@ -57,7 +100,7 @@ shows up everywhere:
 | Setting | Home Assistant | MQTT / webhook | on the clock (view mode) |
 |---|---|---|---|
 | `PET_NAME`, `SOUND` | ✅ | ✅ | ✅ Clawd's own settings |
-| `NOTIFY`, `SWITCH_ON_EVENTS`, `MIRROR`, `HUNGER_EMPTY_HOURS`, `EGG_HATCH_MIN`, `CHILD/TEEN/ADULT_AT_HOURS`, `SLEEP_FROM/TO`, `NIGHT_FROM/TO`, `TZ` | ✅ | ✅ | - |
+| `DIFFICULTY`, `NOTIFY`, `SWITCH_ON_EVENTS`, `MIRROR`, and every *(difficulty)* value above, `SLEEP_FROM/TO`, `NIGHT_FROM/TO`, `TZ` | ✅ | ✅ | - |
 
 - **MQTT:** publish JSON to `clawd/config/set`, e.g. `{"SOUND":true,"HUNGER_EMPTY_HOURS":10}`.
   Each value is checked like the Settings node's; one that would be refused (out of range,
@@ -81,9 +124,11 @@ shows up everywhere:
 The easy way is the one in the README: publish
 [`homeassistant/clawd-discovery.json`](../homeassistant/clawd-discovery.json) and add
 [`homeassistant/dashboard.yaml`](../homeassistant/dashboard.yaml). The discovery message creates a
-**Clawd** device with sensors (stage, food, happiness, energy, hygiene, health, poop, age, care
-score, generation, asleep, sick), buttons (feed, play, clean, medicine, sleep, wake up, show
-stats, new egg), the screen camera and the settings controls. The buttons publish to `clawd/ha`,
+**Clawd** device with sensors (stage - egg to legend, food, happiness, energy, hygiene, health,
+poop, age, care score, generation, asleep, sick), buttons (feed, play, clean, medicine, sleep, wake
+up, show stats, new egg), the screen camera and the settings controls (a Difficulty dropdown and
+one control per setting). The demo dashboard has two pages: **Clawd** (the pet) and **Settings**
+(*Settings* and *Advanced Settings*). The buttons publish to `clawd/ha`,
 which n8n answers by doing the action and bringing Clawd on screen.
 
 From a terminal instead of Home Assistant's Developer tools:
@@ -158,8 +203,8 @@ and device mode), the tunes and notifications. What differs:
 - **Time zone:** a setting (empty: n8n's own) instead of the clock's local time.
 - **From Moepchi's port:** the blinking eyes and shut eyes while asleep; in push mode PLAY is an
   instant +1500 happiness (there is no Star Catch); the webhook with `reset` and `wake`.
-- **Added here:** view and device mode, Home Assistant over MQTT, live settings, the screen
-  mirror, `OFF` on the clock / a red frame when n8n stops, and fixes for sound
+- **Added here:** view and device mode, difficulty presets, the elder and legend stages and a
+  peaceful old age, Home Assistant over MQTT, live settings, the screen mirror, `OFF` on the clock / a red frame when n8n stops, and fixes for sound
   (`/api/v1/audio/play`), stats (`"scroll": true` is rejected by AWTRIX NG), buttons that only act
   while Clawd is on screen, and lost presses.
 

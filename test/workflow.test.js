@@ -249,8 +249,10 @@ test('Home Assistant settings entities: one per live setting, and every command 
 
   // What Home Assistant would send (numbers as HA formats them, text through tojson),
   // and what the state template would read back.
-  const samples = { PET_NAME: 'Mr "Pinch"', TZ: 'Europe/Paris', HUNGER_EMPTY_HOURS: 9.5, EGG_HATCH_MIN: 20, CHILD_AT_HOURS: 10,
-    TEEN_AT_HOURS: 30, ADULT_AT_HOURS: 60, SLEEP_FROM: 23, SLEEP_TO: 7, NIGHT_FROM: 21, NIGHT_TO: 5 };
+  const samples = { DIFFICULTY: 'hard', PET_NAME: 'Mr "Pinch"', TZ: 'Europe/Paris', HUNGER_EMPTY_HOURS: 9.5, EGG_HATCH_MIN: 20, CHILD_AT_HOURS: 10,
+    TEEN_AT_HOURS: 30, ADULT_AT_HOURS: 60, ELDER_AT_HOURS: 200, ELDER_LIFE_HOURS: 50, LEGEND_AFTER_HOURS: 30, SICK_CHANCE_PCT: 5,
+    CARE_HAPPY: 300, CARE_GRUMPY: -200, SLEEP_FROM: 23, SLEEP_TO: 7, NIGHT_FROM: 21, NIGHT_TO: 5 };
+  assert.deepEqual(byKey.DIFFICULTY.options, ['easy', 'normal', 'hard']);
   const store = {};
   for (const [k, c] of Object.entries(byKey)) {
     let payload;
@@ -292,4 +294,12 @@ test('Home Assistant demo dashboard: every entity it shows comes from the discov
   const used = [...new Set(yaml.match(/\b(?:sensor|binary_sensor|button|switch|number|text|camera)\.clawd_[a-z0-9_]+/g))];
   assert.ok(used.length > 30, `${used.length} entities on the dashboard`);
   for (const e of used) assert.ok(ids.has(e), `${e} is not created by clawd-discovery.json`);
+  // Settings live on their own page, and every setting is on it.
+  const settingsPage = yaml.slice(yaml.indexOf('path: settings'));
+  assert.ok(yaml.indexOf('path: settings') > yaml.indexOf('path: clawd'), 'a separate Settings page');
+  assert.match(settingsPage, /heading: Settings\n/); assert.match(settingsPage, /heading: Advanced Settings/);
+  for (const c of Object.values(disc.cmps).filter((x) => x.entity_category === 'config')) {
+    assert.ok(settingsPage.includes(haId(c.p, c.name)), `${haId(c.p, c.name)} on the Settings page`);
+    assert.ok(!yaml.slice(0, yaml.indexOf('path: settings')).includes(haId(c.p, c.name) + '\n'), `${haId(c.p, c.name)} not on the pet page`);
+  }
 });

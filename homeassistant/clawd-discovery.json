@@ -8,7 +8,7 @@
     "mf": "Clawd off-device"
   },
   "o": {
-    "name": "clawd-offdevice"
+    "name": "clawd-hybrid-pet"
   },
   "state_topic": "clawd/state",
   "cmps": {
@@ -17,7 +17,7 @@
       "name": "Stage",
       "unique_id": "clawd_stage",
       "icon": "mdi:egg-easter",
-      "value_template": "{% set f = value.split(',') %}{% set st = f[1] | int %}{% set ev = f[2] | int %}{% set va = f[3] | int %}{{ 'Egg' if st == 0 else 'Dead' if st == 2 else (['Egg', 'Baby', 'Child', 'Teen', 'Adult'][ev] ~ ((' (well raised)' if va == 0 else ' (neglected)' if va == 2 else '') if ev == 4 else '')) }}",
+      "value_template": "{% set f = value.split(',') %}{% set st = f[1] | int %}{% set ev = f[2] | int %}{% set va = f[3] | int %}{% set old = (f[22] if f | length > 22 else '0') == '1' %}{{ 'Egg' if st == 0 else ('Passed away (old age)' if old else 'Dead') if st == 2 else (['Egg', 'Baby', 'Child', 'Teen', 'Adult', 'Elder', 'Legend'][ev] ~ ((' (well raised)' if va == 0 else ' (neglected)' if va == 2 else '') if ev in [4, 5] else '')) }}",
       "expire_after": 180
     },
     "food": {
@@ -194,6 +194,22 @@
       "topic": "clawd/screen",
       "image_encoding": "b64"
     },
+    "set_difficulty": {
+      "p": "select",
+      "name": "Difficulty",
+      "unique_id": "clawd_set_difficulty",
+      "icon": "mdi:speedometer",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "options": [
+        "easy",
+        "normal",
+        "hard"
+      ],
+      "command_template": "{\"DIFFICULTY\": {{ value | tojson }} }",
+      "value_template": "{{ value_json.DIFFICULTY }}"
+    },
     "set_pet_name": {
       "p": "text",
       "name": "Pet name",
@@ -341,6 +357,100 @@
       "unit_of_measurement": "h",
       "command_template": "{\"ADULT_AT_HOURS\": {{ value }} }",
       "value_template": "{{ value_json.ADULT_AT_HOURS }}"
+    },
+    "set_elder_at_hours": {
+      "p": "number",
+      "name": "Elder at age",
+      "unique_id": "clawd_set_elder_at_hours",
+      "icon": "mdi:human-cane",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": 0,
+      "max": 8760,
+      "step": 1,
+      "unit_of_measurement": "h",
+      "command_template": "{\"ELDER_AT_HOURS\": {{ value }} }",
+      "value_template": "{{ value_json.ELDER_AT_HOURS }}"
+    },
+    "set_elder_life_hours": {
+      "p": "number",
+      "name": "Elder lifespan",
+      "unique_id": "clawd_set_elder_life_hours",
+      "icon": "mdi:timer-sand",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": 1,
+      "max": 8760,
+      "step": 1,
+      "unit_of_measurement": "h",
+      "command_template": "{\"ELDER_LIFE_HOURS\": {{ value }} }",
+      "value_template": "{{ value_json.ELDER_LIFE_HOURS }}"
+    },
+    "set_legend_after_hours": {
+      "p": "number",
+      "name": "Legend after",
+      "unique_id": "clawd_set_legend_after_hours",
+      "icon": "mdi:crown",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": 1,
+      "max": 8760,
+      "step": 1,
+      "unit_of_measurement": "h",
+      "command_template": "{\"LEGEND_AFTER_HOURS\": {{ value }} }",
+      "value_template": "{{ value_json.LEGEND_AFTER_HOURS }}"
+    },
+    "set_sick_chance_pct": {
+      "p": "number",
+      "name": "Sickness chance",
+      "unique_id": "clawd_set_sick_chance_pct",
+      "icon": "mdi:virus",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit_of_measurement": "%",
+      "command_template": "{\"SICK_CHANCE_PCT\": {{ value }} }",
+      "value_template": "{{ value_json.SICK_CHANCE_PCT }}"
+    },
+    "set_care_happy": {
+      "p": "number",
+      "name": "Care for a happy adult",
+      "unique_id": "clawd_set_care_happy",
+      "icon": "mdi:emoticon-happy-outline",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": -1000,
+      "max": 1000,
+      "step": 10,
+      "command_template": "{\"CARE_HAPPY\": {{ value }} }",
+      "value_template": "{{ value_json.CARE_HAPPY }}"
+    },
+    "set_care_grumpy": {
+      "p": "number",
+      "name": "Care for a grumpy adult",
+      "unique_id": "clawd_set_care_grumpy",
+      "icon": "mdi:emoticon-angry-outline",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": -1000,
+      "max": 1000,
+      "step": 10,
+      "command_template": "{\"CARE_GRUMPY\": {{ value }} }",
+      "value_template": "{{ value_json.CARE_GRUMPY }}"
     },
     "set_sleep_from": {
       "p": "number",

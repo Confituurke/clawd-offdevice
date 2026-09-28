@@ -178,6 +178,30 @@ for tag : ["egg", "baby", "child", "teen", "adult0", "adult1", "adult2", "dead",
   check(lit() > 10, "draws " + tag)
 end
 
+# ---- elder, legend, old age (n8n brain) ------------------------------------------------
+mqtt.deliver("clawd/state", sline("elder0"))
+frame(app, 20)
+check(app.W == 10 && app.H == 7, "elder sprite is 10 x 7 (with its cane): " + str(app.W) + "x" + str(app.H))
+check(px(12, 0) == 0x9AA0A6 && px(12, 6) == 0x9AA0A6, "the cane stands right of the elder")
+check(px(5, 1) == 0x9AA0A6, "a happy elder's silver crest")
+mqtt.deliver("clawd/state", sline("elder2"))
+frame(app, 20)
+check(px(5, 4) == 0xE05540, "a grumpy elder keeps its red eyes")
+app._a(6)
+check(string.find(app.b, "ELDER") >= 0, "stats name the elder: " + str(app.b))
+app._x()
+mqtt.deliver("clawd/state", sline("legend"))
+frame(app, 20)
+check(app.W == 8 && px(6, 2) == 0xFFD34D, "legend: a golden crab")
+mqtt.deliver("clawd/state", sline("passed"))
+frame(app, 20)
+check(app.s[22] == 1, "field 22 read")
+check(px(6, 0) == 0xFFD34D || px(6, 1) == 0xFFD34D, "old age: a halo")
+check(px(4, 1) != 0x9AA0A6 || px(4, 2) != 0x9AA0A6, "no tombstone")
+mqtt.deliver("clawd/state", sline("before22"))
+frame(app, 20)
+check(app.s[1] == 1 && app.s[2] == 4 && app.s[22] == 0 && lit() > 20, "a 22-field line from an older n8n still works")
+
 # ---- device brain ------------------------------------------------------------------
 print("view script + clawdcore, device brain")
 reset_services()
@@ -245,7 +269,7 @@ app.setup()
 advance(1000)
 app.loop()
 var drop = hs - app.s[4]
-check(drop > 0 && drop < 79 * 7 * 3, "3 h catch-up drop " + str(drop) + " below live " + str(79 * 7 * 3))
+check(drop > 0 && drop < 119 * 7 * 3, "3 h catch-up drop " + str(drop) + " below live " + str(119 * 7 * 3))
 
 # a pet saved by the original Clawd v1.1 (store key "s") carries over
 reset_services()
@@ -264,6 +288,19 @@ press(app)
 press(app)
 frame(app, 3100)
 check(app.s[1] == 0 && app.s[13] == 5, "next generation egg")
+
+# growing old in device mode: elder at 168 h, a normal elder passes away 96 h later
+core.t["s"] = 1                        # the pet above is an egg again; make it an adult
+core.t["v"] = 4
+core.t["u"] = 1
+core.t["x"] = 10000
+core.t["h"] = 10000
+core.t["g"] = 168 * 3600
+advance(1000) app.loop()
+check(app.s[2] == 5 && core.t["d"] > 0, "device mode: elder")
+core.t["g"] = core.t["d"] + 96 * 3600
+advance(1000) app.loop()
+check(app.s[1] == 2 && app.s[22] == 1 && app.fk == 11, "device mode: passed away of old age")
 
 if failures == 0
   print("ALL OK")

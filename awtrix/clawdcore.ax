@@ -1,12 +1,19 @@
 # @module  clawdcore
 # @desc    Clawd's rules, for running the pet entirely on the clock (Brain = device in the Clawd app). No n8n needed.
-# @author  Blueforcer (original Clawd), clawd-offdevice
-# @version 2.0
-# @config  hunger number "Hours until hungry" default=12 min=1 max=240 unit=h help="Awake, full to empty. The original was about 4"
+# @author  Blueforcer (original Clawd), clawd-hybrid-pet
+# @version 2.1
+# @config  difficulty select "Difficulty"   default=normal options=easy,normal,hard,custom help="custom uses the values below"
+# @config  hunger number "Hours until hungry" default=12 min=1 max=240 unit=h help="custom only. Awake, full to empty. The original was about 4"
 # @config  egg    number "Egg hatches after"  default=30 min=1 max=1440 unit=min
 # @config  child  number "Child at"           default=12 min=0 max=8760 unit=h
 # @config  teen   number "Teen at"            default=36 min=0 max=8760 unit=h
 # @config  adult  number "Adult at"           default=72 min=0 max=8760 unit=h
+# @config  elder  number "Elder at"           default=168 min=0 max=8760 unit=h
+# @config  elife  number "Elder lifespan"     default=96 min=1 max=8760 unit=h help="x1.5 if raised happy, x0.5 if grumpy"
+# @config  legend number "Legend after"       default=48 min=1 max=8760 unit=h help="healthy hours a happy elder needs"
+# @config  sick   number "Sickness chance"    default=2 min=0 max=100 unit=%
+# @config  chappy number "Care for happy"     default=200 min=-1000 max=1000
+# @config  cgrump number "Care for grumpy"    default=-100 min=-1000 max=1000
 # @config  sfrom  number "Sleeps from"        default=22 min=0 max=23 unit=h
 # @config  sto    number "Wakes at"           default=8  min=0 max=23 unit=h
 # @config  nfrom  number "Night from"         default=20 min=0 max=23 unit=h
@@ -18,16 +25,29 @@ import math
 # the Clawd app's store (module functions run as the calling app).
 
 var m = module("clawdcore")
+# Difficulty presets (same as n8n): hunger h, egg min, child/teen/adult/elder h,
+# elder lifespan h, legend after h, sickness %, care for happy / grumpy.
+var P = {"easy": [18,15,8,24,48,144,144,24,1,150,-150], "normal": [12,30,12,36,72,168,96,48,2,200,-100],
+         "hard": [8,45,16,48,96,192,72,72,3,250,-50]}
+var c = P.find(store.get("difficulty"))
+if c == nil
+  c = []
+  for k : ["hunger","egg","child","teen","adult","elder","elife","legend","sick","chappy","cgrump"] c.push(store.get(k)) end
+end
 # number settings may arrive as reals; everything below works in whole numbers
-m.st = int(store.get("hunger") * 2520)   # ms per decay step (12 h -> 30240 ms)
-m.eg = int(store.get("egg") * 60)
-m.ag = [int(store.get("child") * 3600), int(store.get("teen") * 3600), int(store.get("adult") * 3600)]
+m.st = int(c[0] * 2520)                  # ms per decay step (12 h -> 30240 ms)
+m.eg = int(c[1] * 60)
+m.ag = [int(c[2] * 3600), int(c[3] * 3600), int(c[4] * 3600), int(c[5] * 3600)]
+m.el = int(c[6] * 3600)
+m.lg = int(c[7] * 3600)
+m.sk = int(c[8])
+m.cz = [int(c[9]), int(c[10])]
 m.hr = [int(store.get("sfrom")), int(store.get("sto")), int(store.get("nfrom")), int(store.get("nto"))]
 m.nf = store.get("notif")
-m.o = [2,0,0,1,10000,10000,10000,10000,10000,0,0,0,0,1,0,0,0,0,1,0,0,0]
+m.o = [2,0,0,1,10000,10000,10000,10000,10000,0,0,0,0,1,0,0,0,0,1,0,0,0,0]
 
 m.fresh = def (g)
-  return {"s":0,"v":0,"u":1,"h":10000,"a":10000,"e":10000,"c":10000,"x":10000,"l":0,"o":0,"k":0,"g":0,"w":0,"z":0,"n":g,"p":0,"t":0,"y":0,"f":0,"m":0,"q":0,"i":1,"b":-1,"fk":0}
+  return {"s":0,"v":0,"u":1,"h":10000,"a":10000,"e":10000,"c":10000,"x":10000,"l":0,"o":0,"k":0,"g":0,"w":0,"z":0,"n":g,"p":0,"t":0,"y":0,"f":0,"m":0,"q":0,"i":1,"b":-1,"fk":0,"d":0,"ld":0,"lh":0,"od":0}
 end
 
 m.win = def (h, a, b)
@@ -53,7 +73,9 @@ m.evolve = def (n)
     t["s"] = 1
     m.fx(4)
   else
-    if n == 4 t["u"] = t["z"] >= 200 ? 0 : (t["z"] <= -100 ? 2 : 1) end
+    if n == 4 t["u"] = t["z"] >= m.cz[0] ? 0 : (t["z"] <= m.cz[1] ? 2 : 1) end
+    if n == 5 t["d"] = t["g"] end        # elder since
+    if n == 6 t["ld"] = t["g"] end       # legend since
     m.fx(3)
   end
   m.save()
@@ -93,6 +115,7 @@ m.tick = def ()
           t["a"] = clamp(t["a"] - int(5 * k), 0, 10000)
           t["e"] = clamp(t["e"] + int(2.5 * k), 0, 10000)
           t["c"] = clamp(t["c"] - int(2 * k), 0, 10000)
+          if t["v"] == 5 && t["u"] == 0 && t["x"] >= 8000 && t["k"] == 0 t["lh"] += el end
           if t["t"] > 0
             t["t"] -= el * 3 / 10
             if t["t"] <= 0
@@ -122,6 +145,7 @@ m.tick = def ()
       if t["o"] == 0 t["l"] = au ? 1 : 0 end
     end
     var sl = t["l"] == 1
+    if t["v"] == 5 && t["u"] == 0 && t["x"] >= 8000 && t["k"] == 0 t["lh"] += 1 end   # towards legend
     if t["t"] > 0 && !sl
       t["t"] -= 1
       if t["t"] <= 0
@@ -155,7 +179,7 @@ m.tick = def ()
       end
       t["f"] = cf
       if t["k"] == 0 && !sl
-        if (t["h"] < 2000 || t["a"] < 2000 || t["c"] < 2000 || t["p"] >= 2) && math.rand() % 100 < 2
+        if (t["h"] < 2000 || t["a"] < 2000 || t["c"] < 2000 || t["p"] >= 2) && math.rand() % 100 < m.sk
           t["k"] = 1
           t["z"] -= 25
         end
@@ -180,9 +204,17 @@ m.tick = def ()
     end
     var ag = t["g"]
     var e = t["v"]
+    if t["s"] != 1 return end
     if e == 1 && ag >= m.ag[0] m.evolve(2)
     elif e == 2 && ag >= m.ag[1] m.evolve(3)
     elif e == 3 && ag >= m.ag[2] m.evolve(4)
+    elif e == 4 && ag >= m.ag[3] m.evolve(5)
+    elif e == 5 && t["u"] == 0 && t["lh"] >= m.lg m.evolve(6)
+    elif e >= 5 && ag >= (e == 6 ? t["ld"] + m.el * 3 / 2 : t["d"] + (t["u"] == 0 ? m.el * 3 / 2 : (t["u"] == 2 ? m.el / 2 : m.el)))
+      t["s"] = 2                         # a peaceful old age
+      t["od"] = 1
+      m.fx(11)
+      m.save()
     end
   end
   m.sv -= 1
@@ -251,17 +283,21 @@ m.act = def (a, hits)
     t["o"] = 1
     t["l"] = 0
   elif a == "warm" && s == 0
-    t["w"] = min(t["w"] + 60, 900)
+    if t["w"] < 900 t["w"] = min(t["w"] + 60, 900) end   # a legend's egg may start warmer
     m.fx(7)
   elif (a == "newegg" || a == "reset") && s == 2
     m.t = m.fresh(t["n"] + 1)
     m.t["q"] = t["q"]                    # keep the effect counter moving
+    if t["v"] == 6                       # a legend's egg: hatches in half the time, a head start in care
+      m.t["w"] = m.eg / 2
+      m.t["z"] = 50
+    end
     m.fx(7)
   end
   m.save()
 end
 
-# The state as the Clawd app reads it: the same 22 fields n8n publishes.
+# The state as the Clawd app reads it: the same 23 fields n8n publishes.
 m.view = def ()
   var t = m.t
   var o = m.o
@@ -286,6 +322,7 @@ m.view = def ()
   o[18] = t["i"]
   o[20] = t["w"]
   o[21] = m.eg
+  o[22] = t["od"]
   return o
 end
 

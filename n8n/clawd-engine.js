@@ -17,7 +17,7 @@
 //          over MQTT.
 // ============================================================================
 
-const ENGINE_VERSION = '2.0.0';
+const ENGINE_VERSION = '2.1.0';
 
 // ---- settings --------------------------------------------------------------
 // Every value can be overridden from the workflow's "Settings" node.
@@ -28,11 +28,18 @@ const DEFAULTS = {
   APP_NAME: 'clawd',          // pushed app name (push) / script name (view)
   PET_NAME: 'Clawd',
   TZ: '',                     // any IANA time zone; empty: n8n's own time zone
+  DIFFICULTY: 'normal',       // easy | normal | hard: fills in the values below (see PRESETS)
   HUNGER_EMPTY_HOURS: 12,     // awake, full -> empty. The original was ~4 h: an unfed night could starve it.
   EGG_HATCH_MIN: 30,
   CHILD_AT_HOURS: 12,
   TEEN_AT_HOURS: 36,
   ADULT_AT_HOURS: 72,
+  ELDER_AT_HOURS: 168,        // adult -> elder
+  ELDER_LIFE_HOURS: 96,       // an elder's life: x1.5 if raised happy, x0.5 if grumpy; a legend's after it becomes one
+  LEGEND_AFTER_HOURS: 48,     // healthy hours a happy elder needs to become a legend
+  SICK_CHANCE_PCT: 2,         // chance per decay step to fall ill while neglected (the original: 2)
+  CARE_HAPPY: 200,            // care score for a happy adult (the original: 200) ...
+  CARE_GRUMPY: -100,          // ... and for a grumpy one (the original: -100)
   SLEEP_FROM: 22, SLEEP_TO: 8,   // auto-sleep window, local hours
   NIGHT_FROM: 20, NIGHT_TO: 6,   // night scenery window, local hours
   SOUND: false,               // play RTTTL effects (off by default, like the original)
@@ -49,6 +56,18 @@ const DEFAULTS = {
   MIRROR: false,              // push mode: also publish each frame as a PNG (e.g. an HA camera)
   MIRROR_TOPIC: 'clawd/screen'
 };
+
+// Difficulty presets. Normal is the default game; the Settings node and live
+// changes can still set any single value on top of a preset.
+const PRESETS = {
+  easy:   { HUNGER_EMPTY_HOURS: 18, EGG_HATCH_MIN: 15, CHILD_AT_HOURS: 8, TEEN_AT_HOURS: 24, ADULT_AT_HOURS: 48, ELDER_AT_HOURS: 144,
+    ELDER_LIFE_HOURS: 144, LEGEND_AFTER_HOURS: 24, SICK_CHANCE_PCT: 1, CARE_HAPPY: 150, CARE_GRUMPY: -150 },
+  normal: { HUNGER_EMPTY_HOURS: 12, EGG_HATCH_MIN: 30, CHILD_AT_HOURS: 12, TEEN_AT_HOURS: 36, ADULT_AT_HOURS: 72, ELDER_AT_HOURS: 168,
+    ELDER_LIFE_HOURS: 96, LEGEND_AFTER_HOURS: 48, SICK_CHANCE_PCT: 2, CARE_HAPPY: 200, CARE_GRUMPY: -100 },
+  hard:   { HUNGER_EMPTY_HOURS: 8, EGG_HATCH_MIN: 45, CHILD_AT_HOURS: 16, TEEN_AT_HOURS: 48, ADULT_AT_HOURS: 96, ELDER_AT_HOURS: 192,
+    ELDER_LIFE_HOURS: 72, LEGEND_AFTER_HOURS: 72, SICK_CHANCE_PCT: 3, CARE_HAPPY: 250, CARE_GRUMPY: -50 }
+};
+const PRESET_KEYS = Object.keys(PRESETS.normal);
 
 // ---- palette and sprites (same as the original) -----------------------------
 const CM = {
@@ -71,6 +90,16 @@ const SPR = {
         b: ['........', 'ccoooocc', '.oooooo.', 'oowoowoo', '.oooooo.', '..oooo..', 'd.d.d.d.'] }, // adult, normal
   a2: { a: ['xx....xx', 'x.qqqq.x', '.qqqqqq.', 'qqrqqrqq', '.qqqqqq.', '..dddd..', '.d.d.d.d'],
         b: ['........', 'xxqqqqxx', '.qqqqqq.', 'qqrqqrqq', '.qqqqqq.', '..dddd..', 'd.d.d.d.'] }, // adult, grumpy
+  // elder: stooped, silver brows, a cream beard and a cane; keeps the adult's type
+  e0: { a: ['.........t', '..t..t..tt', 'c.OOOO.c.t', 'OtOOOOtO.t', 'OOwOOwOO.t', '.OOeeOO..t', '.d.d..d..t'],
+        b: ['.........t', '..t..t..tt', 'c.OOOO.c.t', 'OtOOOOtO.t', 'OOwOOwOO.t', '.OOeeOO..t', 'd.d...d..t'] },  // elder, happy
+  e1: { a: ['.........t', '........tt', 'c.oooo.c.t', 'otooooto.t', 'oowoowoo.t', '.ooeeoo..t', '.d.d..d..t'],
+        b: ['.........t', '........tt', 'c.oooo.c.t', 'otooooto.t', 'oowoowoo.t', '.ooeeoo..t', 'd.d...d..t'] },  // elder, normal
+  e2: { a: ['.........t', '........tt', 'x.qqqq.x.t', 'qgqqqqgq.t', 'qqrqqrqq.t', '.qqeeqq..t', '.d.d..d..t'],
+        b: ['.........t', '........tt', 'x.qqqq.x.t', 'qgqqqqgq.t', 'qqrqqrqq.t', '.qqeeqq..t', 'd.d...d..t'] },  // elder, grumpy
+  lg: { a: ['..ywwy..', 'c.yyyy.c', '.yyyyyy.', 'yymyymyy', '.yyyyyy.', '..yyyy..', '.O.O.O.O'],
+        b: ['...ww...', 'ccyyyycc', '.yyyyyy.', 'yymyymyy', '.yyyyyy.', '..yyyy..', 'O.O.O.O.'] },    // legend
+  spirit: ['.yyyy.', '......', 'e.ee.e', 'eteete', '.eeee.', '.e..e.'],               // passed away of old age
   ghost: ['.gggg.', 'gwggwg', 'gggggg', 'gggggg', 'g.g.g.'],
   tomb:  ['.ttt.', 'ttttt', 'tt.tt', 'tt.tt', 'ttttt', 'ttttt'],
   poop:  ['.m.', 'mmm'],
@@ -94,8 +123,8 @@ const BAR_COLORS = ['#D97757', '#E8C33F', '#3FB4E8', '#4FC96F'];
 
 // Effect ids (ev_k) and how long each one shows, in ms (the original's self.T).
 // 1 feed, 2 clean, 3 evolve, 4 hatch, 5 medicine, 6 refused, 7 egg warmed / new
-// egg, 8 play result, 9 death, 10 show stats (view mode only).
-const FX_MS = [0, 1500, 1200, 2200, 2200, 900, 700, 600, 1500, 1500, 0];
+// egg, 8 play result, 9 death, 10 show stats (view mode only), 11 passed away of old age.
+const FX_MS = [0, 1500, 1200, 2200, 2200, 900, 700, 600, 1500, 1500, 0, 2200];
 
 // RTTTL per effect id, the same tunes as the original.
 const SND = {
@@ -107,7 +136,8 @@ const SND = {
   6: 'x:d=16,o=4,b=200:c',
   7: 'c:d=32,o=6,b=220:e,g',
   8: 'w:d=16,o=6,b=180:c,e,g,8c7',
-  9: 'd:d=4,o=4,b=70:8e,8d,c'
+  9: 'd:d=4,o=4,b=70:8e,8d,c',
+  11: 'p:d=8,o=5,b=90:g,e,c,4g4'
 };
 const SND_SICK = 's:d=8,o=5,b=160:e,p,e';
 
@@ -124,11 +154,14 @@ const ACTIONS = { exit: 0, feed: 1, play: 2, clean: 3, med: 4, sleep: 5, stats: 
 // [key, kind, Home Assistant name, icon, unit, step]; SLEEP_/NIGHT_ are hours of the day (0-23)
 const NUM_RANGES = {
   HUNGER_EMPTY_HOURS: [0.5, 24 * 30], EGG_HATCH_MIN: [1, 24 * 60],
-  CHILD_AT_HOURS: [0, 24 * 365], TEEN_AT_HOURS: [0, 24 * 365], ADULT_AT_HOURS: [0, 24 * 365],
+  CHILD_AT_HOURS: [0, 24 * 365], TEEN_AT_HOURS: [0, 24 * 365], ADULT_AT_HOURS: [0, 24 * 365], ELDER_AT_HOURS: [0, 24 * 365],
+  ELDER_LIFE_HOURS: [1, 24 * 365], LEGEND_AFTER_HOURS: [1, 24 * 365], SICK_CHANCE_PCT: [0, 100],
+  CARE_HAPPY: [-1000, 1000], CARE_GRUMPY: [-1000, 1000],
   SLEEP_FROM: [0, 23], SLEEP_TO: [0, 23], NIGHT_FROM: [0, 23], NIGHT_TO: [0, 23],
   OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400]
 };
 const LIVE_SETTINGS = [
+  ['DIFFICULTY', 'select', 'Difficulty', 'mdi:speedometer'],
   ['PET_NAME', 'text', 'Pet name', 'mdi:rename'],
   ['SOUND', 'bool', 'Sound', 'mdi:volume-high'],
   ['NOTIFY', 'bool', 'Notifications', 'mdi:bell-ring'],
@@ -139,6 +172,12 @@ const LIVE_SETTINGS = [
   ['CHILD_AT_HOURS', 'number', 'Child at age', 'mdi:baby-face-outline', 'h', 1],
   ['TEEN_AT_HOURS', 'number', 'Teen at age', 'mdi:human-child', 'h', 1],
   ['ADULT_AT_HOURS', 'number', 'Adult at age', 'mdi:human', 'h', 1],
+  ['ELDER_AT_HOURS', 'number', 'Elder at age', 'mdi:human-cane', 'h', 1],
+  ['ELDER_LIFE_HOURS', 'number', 'Elder lifespan', 'mdi:timer-sand', 'h', 1],
+  ['LEGEND_AFTER_HOURS', 'number', 'Legend after', 'mdi:crown', 'h', 1],
+  ['SICK_CHANCE_PCT', 'number', 'Sickness chance', 'mdi:virus', '%', 1],
+  ['CARE_HAPPY', 'number', 'Care for a happy adult', 'mdi:emoticon-happy-outline', '', 10],
+  ['CARE_GRUMPY', 'number', 'Care for a grumpy adult', 'mdi:emoticon-angry-outline', '', 10],
   ['SLEEP_FROM', 'number', 'Sleeps from', 'mdi:sleep', '', 1],
   ['SLEEP_TO', 'number', 'Sleeps until', 'mdi:alarm', '', 1],
   ['NIGHT_FROM', 'number', 'Night scene from', 'mdi:weather-night', '', 1],
@@ -191,6 +230,11 @@ function makeConfig(raw) {
   // The clock's commands must never pass for Home Assistant's (they would switch apps).
   if (cfg.HA_TOPIC === cfg.CMD_TOPIC) { warnings.push('HA_TOPIC'); cfg.HA_TOPIC = DEFAULTS.HA_TOPIC === cfg.CMD_TOPIC ? '' : DEFAULTS.HA_TOPIC; }
 
+  // The preset fills in its values first; any value set below wins over it.
+  const dif = String(pick('DIFFICULTY') || DEFAULTS.DIFFICULTY).trim().toLowerCase();
+  if (PRESETS[dif]) cfg.DIFFICULTY = dif; else warnings.push('DIFFICULTY');
+  Object.assign(cfg, PRESETS[cfg.DIFFICULTY]);
+
   const mode = String(pick('MODE') || DEFAULTS.MODE).toLowerCase();
   if (mode === 'push' || mode === 'view') cfg.MODE = mode; else warnings.push('MODE');
 
@@ -206,9 +250,14 @@ function makeConfig(raw) {
     if (!inRange(pick(k), lo, hi)) warnings.push(k);          // unusable, or clamped into range
   }
   for (const k of ['SLEEP_FROM', 'SLEEP_TO', 'NIGHT_FROM', 'NIGHT_TO']) cfg[k] = Math.floor(cfg[k]);
-  if (!(cfg.CHILD_AT_HOURS <= cfg.TEEN_AT_HOURS && cfg.TEEN_AT_HOURS <= cfg.ADULT_AT_HOURS)) {
-    warnings.push('CHILD/TEEN/ADULT_AT_HOURS');
-    cfg.CHILD_AT_HOURS = DEFAULTS.CHILD_AT_HOURS; cfg.TEEN_AT_HOURS = DEFAULTS.TEEN_AT_HOURS; cfg.ADULT_AT_HOURS = DEFAULTS.ADULT_AT_HOURS;
+  if (!(cfg.CHILD_AT_HOURS <= cfg.TEEN_AT_HOURS && cfg.TEEN_AT_HOURS <= cfg.ADULT_AT_HOURS && cfg.ADULT_AT_HOURS <= cfg.ELDER_AT_HOURS)) {
+    warnings.push('GROWTH_AGES');
+    const p = PRESETS[cfg.DIFFICULTY];
+    for (const k of ['CHILD_AT_HOURS', 'TEEN_AT_HOURS', 'ADULT_AT_HOURS', 'ELDER_AT_HOURS']) cfg[k] = p[k];
+  }
+  if (!(cfg.CARE_GRUMPY < cfg.CARE_HAPPY)) {
+    warnings.push('CARE_LEVELS');
+    cfg.CARE_HAPPY = PRESETS[cfg.DIFFICULTY].CARE_HAPPY; cfg.CARE_GRUMPY = PRESETS[cfg.DIFFICULTY].CARE_GRUMPY;
   }
   for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST', 'MIRROR']) {
     if (pick(k) === undefined) continue;
@@ -251,6 +300,7 @@ function freshState(gen, nowMs) {
     ui: 0, mi: 0, dwell: 0, rp: 0,          // push-mode UI: 0 scene, 1 menu, 3 stats, 5 new-egg confirm
     ev_k: 0, ev_t0: 0, fx: 0, hits: 1,      // last effect id, its start (ms), effect counter, play hits
     stat_open: 0, stat_ms: 8000, stat_turn: 0,
+    eld: 0, lgd: 0, lgh: 0, old: 0,          // elder since (age s), legend since, healthy s as a happy elder, died of old age
     lastNotify: 0, decAcc: 0, aslast: null,
     last_ts: Math.floor((nowMs || Date.now()) / 1000),
     saved: 0, v: 2
@@ -284,10 +334,12 @@ function applyCatchup(s, dtSec, cfg) {
     s.pt -= el * 0.3;
     if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = c10k(s.cl - 1500); }
   }
+  healthyTime(s, el);
 }
 
 // One decay step: the original's 10-second branch, formula for formula.
-function decayStep(s, nowMs) {
+function decayStep(s, nowMs, cfg) {
+  cfg = cfg || DEFAULTS;
   if (s.st !== 1) return;
   const sl = s.sl === 1;
   const xtra = (s.pp >= 2 || s.sk === 1) ? 5 : 0;
@@ -309,7 +361,7 @@ function decayStep(s, nowMs) {
   s.cf = cf;
 
   if (s.sk === 0 && !sl) {
-    if ((s.h < 2000 || s.ha < 2000 || s.cl < 2000 || s.pp >= 2) && Math.random() < 0.02) {
+    if ((s.h < 2000 || s.ha < 2000 || s.cl < 2000 || s.pp >= 2) && Math.random() < cfg.SICK_CHANCE_PCT / 100) {
       s.sk = 1; s.cs -= 25;
     }
   }
@@ -323,18 +375,40 @@ function decayStep(s, nowMs) {
   if (s.hp <= 0) { s.st = 2; s.ui = 0; fx(s, 9, nowMs); }
 }
 
-function evolve(s, stage, nowMs) {
+function evolve(s, stage, nowMs, cfg) {
+  cfg = cfg || DEFAULTS;
   s.ev = stage;
   if (stage === 1) { s.st = 1; fx(s, 4, nowMs); return; }
-  if (stage === 4) s.va = s.cs >= 200 ? 0 : (s.cs <= -100 ? 2 : 1);
+  if (stage === 4) s.va = s.cs >= cfg.CARE_HAPPY ? 0 : (s.cs <= cfg.CARE_GRUMPY ? 2 : 1);
+  if (stage === 5) s.eld = s.age;
+  if (stage === 6) s.lgd = s.age;
   fx(s, 3, nowMs);
+}
+
+// A happy elder that stays healthy (health 80%+, not sick) counts towards legend.
+function healthyTime(s, dt) {
+  if (s.st === 1 && s.ev === 5 && s.va === 0 && s.hp >= 8000 && s.sk === 0) s.lgh = (s.lgh || 0) + dt;
+}
+
+// When an elder or legend passes away of old age (age in s), or null.
+function lifeEnd(s, cfg) {
+  const life = cfg.ELDER_LIFE_HOURS * 3600;
+  if (s.ev === 5) return s.eld + life * (s.va === 0 ? 1.5 : s.va === 2 ? 0.5 : 1);
+  if (s.ev === 6) return s.lgd + life * 1.5;
+  return null;
 }
 
 function checkEvolution(s, cfg, nowMs) {
   if (s.st !== 1) return;
-  if (s.ev === 1 && s.age >= cfg.CHILD_AT_HOURS * 3600) evolve(s, 2, nowMs);
-  else if (s.ev === 2 && s.age >= cfg.TEEN_AT_HOURS * 3600) evolve(s, 3, nowMs);
-  else if (s.ev === 3 && s.age >= cfg.ADULT_AT_HOURS * 3600) evolve(s, 4, nowMs);
+  if (s.ev === 1 && s.age >= cfg.CHILD_AT_HOURS * 3600) evolve(s, 2, nowMs, cfg);
+  else if (s.ev === 2 && s.age >= cfg.TEEN_AT_HOURS * 3600) evolve(s, 3, nowMs, cfg);
+  else if (s.ev === 3 && s.age >= cfg.ADULT_AT_HOURS * 3600) evolve(s, 4, nowMs, cfg);
+  else if (s.ev === 4 && s.age >= cfg.ELDER_AT_HOURS * 3600) evolve(s, 5, nowMs, cfg);
+  else if (s.ev === 5 && s.va === 0 && s.lgh >= cfg.LEGEND_AFTER_HOURS * 3600) evolve(s, 6, nowMs, cfg);
+  else {
+    const end = lifeEnd(s, cfg);
+    if (end !== null && s.age >= end) { s.st = 2; s.old = 1; s.ui = 0; fx(s, 11, nowMs); }   // a peaceful old age
+  }
 }
 
 function isNight(s, cfg, nowMs) {
@@ -349,7 +423,7 @@ function advanceTime(s, cfg, nowMs) {
 
   if (s.st === 0) {
     s.age += dt > 120 ? Math.min(dt, 43200) : dt;         // outages count 12 h at most
-    if (s.age + s.warm >= cfg.EGG_HATCH_MIN * 60) evolve(s, 1, nowMs);
+    if (s.age + s.warm >= cfg.EGG_HATCH_MIN * 60) evolve(s, 1, nowMs, cfg);
     return;
   }
   if (s.st !== 1) return;
@@ -375,7 +449,8 @@ function advanceTime(s, cfg, nowMs) {
   s.decAcc = (s.decAcc || 0) + dt;
   const steps = Math.min(Math.ceil(3600 / cfg.STEP_SEC), Math.floor(s.decAcc / cfg.STEP_SEC));
   s.decAcc -= steps * cfg.STEP_SEC;
-  for (let i = 0; i < steps; i++) decayStep(s, nowMs);
+  for (let i = 0; i < steps; i++) decayStep(s, nowMs, cfg);
+  healthyTime(s, dt);
 
   checkEvolution(s, cfg, nowMs);
 }
@@ -405,7 +480,8 @@ function statsScrollMs(text) { return STATS_HOLD_MS + Math.ceil((text.length * 4
 
 function statsText(s, cfg) {
   const a = s.age;
-  return `${cfg.PET_NAME}  AGE ${Math.floor(a / 86400)}d${Math.floor((a % 86400) / 3600)}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`;
+  const title = s.ev === 6 ? '  LEGEND' : s.ev === 5 ? '  ELDER' : '';
+  return `${cfg.PET_NAME}${title}  AGE ${Math.floor(a / 86400)}d${Math.floor((a % 86400) / 3600)}h  GEN ${s.gen}  CARE ${s.cs}  HP ${Math.floor(s.hp / 100)}%`;
 }
 
 // Apply one action. `opt.hits` (0-3) is a Star Catch result from the device;
@@ -453,15 +529,16 @@ function action(s, id, cfg, nowMs, opt) {
     s.stat_ms = statsScrollMs(statsText(s, cfg));
   } else if (id === 7 || id === 10) {                    // RESET / NEW EGG - only while dead
     if (s.st === 2) {
-      const gen = s.gen, n = s.fx;
+      const gen = s.gen, n = s.fx, legend = s.ev === 6;
       Object.assign(s, freshState(gen + 1, nowMs));
       s.fx = n;                                          // keep the effect counter moving
+      if (legend) { s.warm = Math.floor(cfg.EGG_HATCH_MIN * 30); s.cs = 50; }   // a legend's egg: hatches in half the time, a head start in care
       fx(s, 7, nowMs);
     }
   } else if (id === 8) {                                 // WAKE
     if (s.st === 1 && s.sl === 1) { s.slo = 1; s.sl = 0; }
   } else if (id === 9) {                                 // WARM the egg
-    if (s.st === 0) { s.warm = Math.min(s.warm + 60, 900); fx(s, 7, nowMs); }
+    if (s.st === 0) { s.warm = Math.max(s.warm, Math.min(s.warm + 60, 900)); fx(s, 7, nowMs); }
   }
 }
 
@@ -520,6 +597,8 @@ function creature(s) {
   if (s.ev === 1) return { pair: SPR.b1, w: 5, h: 4, skin: CM.o };
   if (s.ev === 2) return { pair: SPR.b2, w: 6, h: 5, skin: CM.o };
   if (s.ev === 3) return { pair: SPR.b3, w: 7, h: 6, skin: CM.o };
+  if (s.ev === 6) return { pair: SPR.lg, w: 8, h: 7, skin: CM.y };
+  if (s.ev === 5) return { pair: s.va === 0 ? SPR.e0 : s.va === 2 ? SPR.e2 : SPR.e1, w: 10, h: 7, skin: s.va === 0 ? CM.O : s.va === 2 ? CM.q : CM.o, slow: true };
   if (s.va === 0) return { pair: SPR.a0, w: 8, h: 7, skin: CM.O };
   if (s.va === 2) return { pair: SPR.a2, w: 8, h: 7, skin: CM.q };
   return { pair: SPR.a1, w: 8, h: 7, skin: CM.o };
@@ -562,6 +641,11 @@ function render(s, cfg, t) {
     return withLifetime({ draw: cv.done() }, cfg);
   }
 
+  if (s.st === 2 && s.old === 1) {                          // passed away of old age: a spirit with a halo
+    cv.cmd(['line', 0, 7, 16, 7, '#1E2430']);
+    cv.sprite(SPR.spirit, 5, (Math.floor(t / 900) % 2 === 0) ? 0 : 1);
+    return withLifetime({ draw: cv.done() }, cfg);
+  }
   if (s.st === 2) {
     cv.cmd(['line', 0, 7, 16, 7, '#1E2430']);
     cv.sprite(SPR.tomb, 4, 1);
@@ -598,7 +682,7 @@ function render(s, cfg, t) {
       const up = Math.floor(t / 900) % 2 === 0;
       cv.cmd(['text', ox + cr.w + (up ? 1 : 2), up ? -1 : 0, 'z', '#5C7FBF']);
     } else {
-      const pe = (active(1) && ed < 1500) ? 160 : 1200;      // chewing flips faster
+      const pe = (active(1) && ed < 1500) ? 160 : cr.slow ? 1800 : 1200;   // chewing flips faster, elders are slower
       const rows = Math.floor(t / pe) % 2 === 0 ? cr.pair.a : cr.pair.b;
       const flash = (active(3) || active(4)) && Math.floor(ed / 140) % 2 === 0 ? '#FFE9C9' : null;
       const blink = !flash && (t % 4000) < 150;
@@ -629,7 +713,7 @@ function render(s, cfg, t) {
 // screen, the frame is refreshed right away instead of waiting.
 function signature(s, cfg, nowMs) {
   const bars = [s.h, s.ha, s.en, s.cl].map((v) => Math.floor(v * 14 / 10000)).join(',');
-  return [s.st, s.ev, s.va, s.pp, s.sk, s.sl, s.ui, s.mi, s.rp, bars, isNight(s, cfg, nowMs) ? 1 : 0].join('|');
+  return [s.st, s.ev, s.va, s.old, s.pp, s.sk, s.sl, s.ui, s.mi, s.rp, bars, isNight(s, cfg, nowMs) ? 1 : 0].join('|');
 }
 
 // While an effect plays (feeding, cleaning, hatching...), push extra frames so
@@ -655,7 +739,8 @@ function stateLine(s, cfg, nowMs) {
     s.ev_k, s.fx % 100000, s.hits,
     Math.floor(nowMs / 1000),
     Math.floor(s.warm),
-    Math.floor(cfg.EGG_HATCH_MIN * 60)
+    Math.floor(cfg.EGG_HATCH_MIN * 60),
+    s.old ? 1 : 0                        // 22: passed away of old age (added later; older apps read 0-21)
   ].join(',');
 }
 
@@ -710,18 +795,26 @@ function applySettings(payload, store, raw) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) { res.rejected.push('(not an object)'); return res; }
   store.cfg = store.cfg || {};
   if (o.reset === true) { store.cfg = {}; res.accepted.push('reset'); }
+  // Choosing a difficulty applies it: stored changes to its values go, the
+  // Settings node's values stay (leave those empty to follow the difficulty).
+  if (o.DIFFICULTY !== undefined && o.DIFFICULTY !== null) {
+    const d = String(o.DIFFICULTY).trim().toLowerCase();
+    if (PRESETS[d]) { for (const k of PRESET_KEYS) delete store.cfg[k]; store.cfg.DIFFICULTY = d; res.accepted.push('DIFFICULTY'); }
+    else res.rejected.push('DIFFICULTY');
+  }
   const want = {};
   for (const [k, v] of Object.entries(o)) {
-    if (k === 'reset') continue;
+    if (k === 'reset' || (k === 'DIFFICULTY' && v !== null)) continue;
     if (!LIVE_KEYS.includes(k)) { res.rejected.push(k); continue; }
     if (v === null || (k === 'TZ' && String(v).trim() === '')) { delete store.cfg[k]; res.accepted.push(k); continue; }
     want[k] = v;
   }
   const trial = makeConfig(Object.assign({}, raw || {}, store.cfg, want));
   const before = makeConfig(Object.assign({}, raw || {}, store.cfg));
-  const growthBad = trial.warnings.includes('CHILD/TEEN/ADULT_AT_HOURS') && !before.warnings.includes('CHILD/TEEN/ADULT_AT_HOURS');
+  const growthBad = trial.warnings.includes('GROWTH_AGES') && !before.warnings.includes('GROWTH_AGES');
+  const careBad = trial.warnings.includes('CARE_LEVELS') && !before.warnings.includes('CARE_LEVELS');
   for (const k of Object.keys(want)) {
-    const bad = trial.warnings.includes(k) || (growthBad && /_AT_HOURS$/.test(k)) ||
+    const bad = trial.warnings.includes(k) || (growthBad && /_AT_HOURS$/.test(k)) || (careBad && /^CARE_/.test(k)) ||
       (k === 'PET_NAME' && String(want[k]).trim() === '');
     if (bad) res.rejected.push(k);
     else { store.cfg[k] = trial[k]; res.accepted.push(k); }
@@ -966,7 +1059,7 @@ function runN8n(input, staticData, rawCfg, nowMs) {
 
 const ClawdEngine = {
   ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, STATS_AFTER_MS, statsScrollMs,
-  makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
+  PRESETS, PRESET_KEYS, lifeEnd, makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
   checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
   stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n,
   LIVE_SETTINGS, LIVE_KEYS, NUM_RANGES, effectiveConfig, applySettings, settingsMessage, deviceSync, devicePatch, parseDeviceReport

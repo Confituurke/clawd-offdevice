@@ -35,7 +35,10 @@ function stateLines() {
     egg: E.stateLine(Object.assign(E.freshState(1, T), { age: 600, fx: 8 }), cfg, T),
     dead: mk({ st: 2, fx: 9, ev_k: 9 }),
     baby: mk({ ev: 1 }), child: mk({ ev: 2 }), teen: mk({ ev: 3 }),
-    adult0: mk({ ev: 4, va: 0 }), adult1: mk({ ev: 4, va: 1 }), adult2: mk({ ev: 4, va: 2 })
+    adult0: mk({ ev: 4, va: 0 }), adult1: mk({ ev: 4, va: 1 }), adult2: mk({ ev: 4, va: 2 }),
+    elder0: mk({ ev: 5, va: 0 }), elder2: mk({ ev: 5, va: 2 }), legend: mk({ ev: 6, va: 0, fx: 12 }),
+    passed: mk({ st: 2, ev: 6, va: 0, old: 1, fx: 13, ev_k: 11 }),
+    before22: mk({ ev: 4, va: 1, fx: 14 }).split(',').slice(0, 22).join(',')   // a line from before field 22
   };
 }
 

@@ -1,7 +1,7 @@
 # @name Clawd
 # @desc Clawd the pixel crab (view; rules in n8n or clawdcore)
-# @author Blueforcer (original Clawd), clawd-offdevice
-# @version 2.0
+# @author Blueforcer (original Clawd), clawd-hybrid-pet
+# @version 2.1
 # @config brain select "Brain" default=n8n options=n8n,device help="device needs the clawdcore module"
 # @config name text "Pet name" default=Clawd maxlen=12
 # @config sound bool "Sound" default=false
@@ -25,8 +25,8 @@ self.R = self._d("r.r|rrr|.r.")
 self.S = [3,0,8,1,13,0,1,2,15,2]
 self.K = [0xD97757,0xE8C33F,0x3FB4E8,0x4FC96F]
 self.L = ["EXIT","FEED","PLAY","CLEAN","MED","SLEEP","STATS"]
-self.T = [0,1500,1200,2200,2200,900,700,600,1500,1500]
-self.J = ["","m:d=16,o=5,b=200:g,p,g,p,g","c:d=32,o=6,b=220:e,g","e:d=16,o=5,b=140:c,e,g,8c6,16p,8e6","h:d=16,o=6,b=180:c,e,g,c7","c:d=32,o=6,b=220:e,g","x:d=16,o=4,b=200:c","c:d=32,o=6,b=220:e,g","w:d=16,o=6,b=180:c,e,g,8c7","d:d=4,o=4,b=70:8e,8d,c"]
+self.T = [0,1500,1200,2200,2200,900,700,600,1500,1500,0,2200]
+self.J = ["","m:d=16,o=5,b=200:g,p,g,p,g","c:d=32,o=6,b=220:e,g","e:d=16,o=5,b=140:c,e,g,8c6,16p,8e6","h:d=16,o=6,b=180:c,e,g,c7","c:d=32,o=6,b=220:e,g","x:d=16,o=4,b=200:c","c:d=32,o=6,b=220:e,g","w:d=16,o=6,b=180:c,e,g,8c7","d:d=4,o=4,b=70:8e,8d,c","","p:d=8,o=5,b=90:g,e,c,4g4"]
 self.u = 0
 self.fk = 0
 self.fe = 0
@@ -60,8 +60,8 @@ var l = string.split(msg, ",")
 if size(l) < 22 || l[0] != "2" return end
 if self.s == nil self.s = [] end
 var i = 0
-while i < 22
-var v = int(l[i])
+while i < 23
+var v = i < size(l) ? int(l[i]) : 0
 if i < size(self.s) self.s[i] = v else self.s.push(v) end
 i += 1
 end
@@ -94,7 +94,7 @@ rotation.show()
 end
 def _u()
 var s = self.s
-var g = s[1] * 100 + s[2] * 10 + s[3]
+var g = s[22] * 1000 + s[1] * 100 + s[2] * 10 + s[3]
 if g != self.sg
 self.sg = g
 self._s()
@@ -106,11 +106,11 @@ elif s[17] != self.lf
 self.lf = s[17]
 if s[16] == 10
 self._a(6)
-elif s[16] > 0 && s[16] < 10
+elif s[16] > 0 && s[16] != 10
 self.fk = s[16]
 self.fe = now_ms()
 if self.snd sound.rtttl(self.J[(self.fk == 8 && s[18] == 0) ? 6 : self.fk]) end
-if self.core != nil && (self.fk == 3 || self.fk == 4 || self.fk == 9) rotation.show() end
+if self.core != nil && (self.fk == 3 || self.fk == 4 || self.fk >= 9) rotation.show() end
 end
 end
 if s[10] == 1 && self.sk == 0
@@ -165,6 +165,10 @@ var a
 var b
 var e = s[2]
 if s[1] == 2
+if s[22] == 1
+self.A = self._d(".yyyy.|......|e.ee.e|eteete|.eeee.|.e..e.")
+return
+end
 self.A = self._d(".gggg.|gwggwg|gggggg|gggggg|g.g.g.")
 self.B = self._d(".ttt.|ttttt|tt.tt|tt.tt|ttttt|ttttt")
 return
@@ -180,6 +184,18 @@ b = "......|cooooc|owoowo|.oooo.|d....d"
 elif e == 3
 a = "c.....c|c.ooo.c|.ooooo.|owooowo|.ooooo.|.d.d.d."
 b = ".......|c.ooo.c|coooooc|owooowo|.ooooo.|d.d.d.d"
+elif e == 6
+a = "..ywwy..|c.yyyy.c|.yyyyyy.|yymyymyy|.yyyyyy.|..yyyy..|.O.O.O.O"
+b = "...ww...|ccyyyycc|.yyyyyy.|yymyymyy|.yyyyyy.|..yyyy..|O.O.O.O."
+elif e == 5
+var k = s[3] == 0 ? "O" : (s[3] == 2 ? "q" : "o")
+var t = s[3] == 0 ? "..t..t..tt" : "........tt"
+var c = s[3] == 2 ? "x" : "c"
+var br = s[3] == 2 ? "g" : "t"
+var ey = s[3] == 2 ? "r" : "w"
+var top = ".........t|" + t + "|" + c + "." + k + k + k + k + "." + c + ".t|" + k + br + k + k + k + k + br + k + ".t|" + k + k + ey + k + k + ey + k + k + ".t|." + k + k + "ee" + k + k + "..t|"
+a = top + ".d.d..d..t"
+b = top + "d.d...d..t"
 elif s[3] == 0
 a = ".y.yy.y.|c.OOOO.c|.OOOOOO.|OOwOOwOO|.OOOOOO.|..OOOO..|.d.d.d.d"
 b = "..y..y..|ccOOOOcc|.OOOOOO.|OOwOOwOO|.OOOOOO.|..OOOO..|d.d.d.d."
@@ -190,7 +206,7 @@ else
 a = "cc....cc|c.oooo.c|.oooooo.|oowoowoo|.oooooo.|..oooo..|.d.d.d.d"
 b = "........|ccoooocc|.oooooo.|oowoowoo|.oooooo.|..oooo..|d.d.d.d."
 end
-self.ey = self.V[(e == 4 && s[3] == 0) ? 1 : ((e == 4 && s[3] == 2) ? 2 : 0)]
+self.ey = self.V[e == 6 ? 10 : ((e >= 4 && s[3] == 0) ? 1 : ((e >= 4 && s[3] == 2) ? 2 : 0))]
 self.A = self._d(a)
 self.W = self.X
 self.H = self.Y
@@ -280,7 +296,7 @@ self.gt = now_ms()
 end
 elif i == 6
 var a = s[15]
-self.b = self.nm + "  AGE " + str(a / 86400) + "d" + str(a % 86400 / 3600) + "h  GEN " + str(s[13]) + "  CARE " + str(s[14]) + "  HP " + str(s[8] / 100) + "%"
+self.b = self.nm + (s[2] == 6 ? "  LEGEND" : (s[2] == 5 ? "  ELDER" : "")) + "  AGE " + str(a / 86400) + "d" + str(a % 86400 / 3600) + "h  GEN " + str(s[13]) + "  CARE " + str(s[14]) + "  HP " + str(s[8] / 100) + "%"
 self.c = -1
 self.u = 3
 elif i == 5
@@ -377,6 +393,11 @@ return
 end
 var ed = now - self.fe
 if self.fk > 0 && ed >= self.T[self.fk] self.fk = 0 end
+if s[1] == 2 && s[22] == 1
+line(0, 7, 16, 7, 0x1E2430)
+self._b(self.A, 5, (now / 900) % 2 == 0 ? 0 : 1, 0, 0)
+return
+end
 if s[1] == 2
 line(0, 7, 16, 7, 0x1E2430)
 self._b(self.B, 4, 1, 0, 0)
@@ -418,7 +439,7 @@ if s[11] == 1
 self._b(self.A, ox, oy, 0, self.ey)
 text(ox + self.W + ((now / 900) % 2 == 0 ? 1 : 2), (now / 900) % 2 == 0 ? 4 : 5, "z", 0x5C7FBF)
 else
-var pe = (self.fk == 1 && ed < 1500) ? 160 : 1200
+var pe = (self.fk == 1 && ed < 1500) ? 160 : (s[2] == 5 ? 1800 : 1200)
 var fl = 0
 if (self.fk == 3 || self.fk == 4) && (ed / 140) % 2 == 0 fl = 0xFFE9C9 end
 self._b((now / pe) % 2 == 0 ? self.A : self.B, ox, oy, fl, (fl == 0 && now % 4000 < 150) ? self.ey : 0)

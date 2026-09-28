@@ -209,11 +209,9 @@ function settings(mode, pos) {
     ['APP_NAME', d.APP_NAME, 'string'],
     ['PET_NAME', d.PET_NAME, 'string'],
     ['TZ', d.TZ, 'string'],
-    ['HUNGER_EMPTY_HOURS', d.HUNGER_EMPTY_HOURS, 'number'],
-    ['EGG_HATCH_MIN', d.EGG_HATCH_MIN, 'number'],
-    ['CHILD_AT_HOURS', d.CHILD_AT_HOURS, 'number'],
-    ['TEEN_AT_HOURS', d.TEEN_AT_HOURS, 'number'],
-    ['ADULT_AT_HOURS', d.ADULT_AT_HOURS, 'number'],
+    ['DIFFICULTY', d.DIFFICULTY, 'string'],
+    // Empty = the difficulty's value; fill one in to override just that value.
+    ...E.PRESET_KEYS.map((k) => [k, '', 'string']),
     ['SLEEP_FROM', d.SLEEP_FROM, 'number'],
     ['SLEEP_TO', d.SLEEP_TO, 'number'],
     ['NIGHT_FROM', d.NIGHT_FROM, 'number'],
@@ -230,7 +228,7 @@ function settings(mode, pos) {
   rows.push(['HA_TOPIC', d.HA_TOPIC, 'string'], ['CONFIG_TOPIC', d.CONFIG_TOPIC, 'string'], ['CONFIG_SET_TOPIC', d.CONFIG_SET_TOPIC, 'string']);
   return {
     id: id('set'), name: 'Settings', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos,
-    notes: 'All of Clawd\'s settings live here. See docs/REFERENCE.md, "Settings".',
+    notes: 'All of Clawd\'s settings live here. DIFFICULTY is easy, normal or hard; the empty values below it follow the difficulty, fill one in to override it. See docs/REFERENCE.md, "Settings".',
     parameters: {
       assignments: { assignments: rows.map(([k, v, type]) => ({ id: id('opt'), name: `cfg.${k}`, value: v, type })) },
       includeOtherFields: true,
@@ -459,8 +457,10 @@ function haDiscovery() {
   };
   sensor('stage', 'Stage', 'mdi:egg-easter',
     "{% set f = value.split(',') %}{% set st = f[1] | int %}{% set ev = f[2] | int %}{% set va = f[3] | int %}" +
-    "{{ 'Egg' if st == 0 else 'Dead' if st == 2 else (['Egg', 'Baby', 'Child', 'Teen', 'Adult'][ev] ~ " +
-    "((' (well raised)' if va == 0 else ' (neglected)' if va == 2 else '') if ev == 4 else '')) }}");
+    "{% set old = (f[22] if f | length > 22 else '0') == '1' %}" +
+    "{{ 'Egg' if st == 0 else ('Passed away (old age)' if old else 'Dead') if st == 2 else " +
+    "(['Egg', 'Baby', 'Child', 'Teen', 'Adult', 'Elder', 'Legend'][ev] ~ " +
+    "((' (well raised)' if va == 0 else ' (neglected)' if va == 2 else '') if ev in [4, 5] else '')) }}");
   for (const [id, name, icon, i] of [['food', 'Food', 'mdi:food-drumstick', 4], ['happiness', 'Happiness', 'mdi:emoticon-happy', 5],
     ['energy', 'Energy', 'mdi:lightning-bolt', 6], ['hygiene', 'Hygiene', 'mdi:shower', 7], ['health', 'Health', 'mdi:heart-pulse', 8]]) {
     sensor(id, name, icon, pct(i), { unit_of_measurement: '%', state_class: 'measurement' });
@@ -487,6 +487,9 @@ function haDiscovery() {
       cmps[id] = Object.assign({ p: 'switch' }, common(k, name, icon), {
         payload_on: JSON.stringify({ [k]: true }), payload_off: JSON.stringify({ [k]: false }),
         value_template: `{{ 'ON' if value_json.${k} else 'OFF' }}`, state_on: 'ON', state_off: 'OFF' });
+    } else if (kind === 'select') {
+      cmps[id] = Object.assign({ p: 'select' }, common(k, name, icon), { options: Object.keys(E.PRESETS),
+        command_template: `{"${k}": {{ value | tojson }} }`, value_template: `{{ value_json.${k} }}` });
     } else if (kind === 'number') {
       const [min, max] = E.NUM_RANGES[k];
       cmps[id] = Object.assign({ p: 'number' }, common(k, name, icon), { mode: 'box', min, max, step },
@@ -501,7 +504,7 @@ function haDiscovery() {
   delete cmps.set_reset.state_topic;
   return {
     dev: { ids: ['clawd'], name: 'Clawd', mdl: 'Virtual pet', mf: 'Clawd off-device' },
-    o: { name: 'clawd-offdevice' },
+    o: { name: 'clawd-hybrid-pet' },
     state_topic: d.STATE_TOPIC,
     cmps
   };

@@ -1,10 +1,12 @@
-# 🦀 Clawd — Off-Device Edition
+# 🦀 Clawd Hybrid
 
 *A tiny crab. A cry for help. A shortage of RAM.*
 
 Clawd is a virtual pet for your [AWTRIX NG](https://github.com/Blueforcer/awtrix-ng) clock: hatch
-it from an egg, feed it, play with it, keep it clean, watch it grow through four life stages, and
-(if you neglect it, you monster) bury it.
+it from an egg, feed it, play with it, keep it clean, watch it grow up and grow old, and (if you
+neglect it, you monster) bury it.
+
+![Clawd from egg to legend](docs/clawd-stages.png)
 
 The pet is **Blueforcer**'s original [Clawd](https://awtrix.de/flow/wg0GspJj3sl7), which runs
 entirely on the clock. On a clock without extra memory (hello, Ulanzi TC001) it often won't fit
@@ -77,8 +79,17 @@ When Clawd is on screen:
   on screen.
 - **Dead:** press **select**, press it again for "NEW EGG?", and wait 3 seconds.
 
-Clawd sleeps from 22:00 to 08:00, grows up after 12, 36 and 72 hours, and needs about four meals
-a day.
+Clawd sleeps from 22:00 to 08:00 and needs about four meals a day.
+
+## Growing up
+
+Egg → baby → child → teen → adult → elder, over about a week. How well you cared for it decides
+what kind of adult it becomes (happy, normal or grumpy), and that decides how long its old age
+lasts: happy elders live the longest. A happy elder that stays healthy long enough becomes a
+golden **legend**, and a legend's egg gets a head start. When an elder's time comes it passes away
+peacefully (a little spirit with a halo), and you start again with a new egg.
+
+Too easy or too hard? Pick a **difficulty**: easy, normal or hard (see Settings below).
 
 ## Home Assistant (optional, view and push mode)
 
@@ -93,17 +104,30 @@ a day.
    buttons (feed, play, clean...) and settings.
 2. **Add the dashboard.** **Settings → Dashboards → Add dashboard → New dashboard from scratch**,
    open it, **pencil → ⋮ → Raw configuration editor**, and replace everything with
-   [`homeassistant/dashboard.yaml`](homeassistant/dashboard.yaml).
-3. **Optional, see the pet:** turn on **Screen mirror** in the dashboard's settings. In view
+   [`homeassistant/dashboard.yaml`](homeassistant/dashboard.yaml). It has two pages: **Clawd**
+   (the pet, its stats and care buttons) and **Settings**.
+3. **Optional, see the pet:** turn on **Screen mirror** on the Settings page. In view
    mode, also import [`n8n/clawd-workflow-mirror.json`](n8n/clawd-workflow-mirror.json) and fill
    in its MQTT credential and Settings like before.
 
 ## Settings
 
 Change them in n8n's **Settings** node, or while Clawd runs from the dashboard's **Settings**
-section: name, sound, notifications, how fast Clawd gets hungry, growing-up ages, sleep and night
-hours, time zone. The time zone is n8n's own unless you set one. In view mode, Clawd's name and
-sound can also be changed on the clock (Apps → Clawd → gear button).
+page:
+
+- **Settings:** difficulty, name, sound, notifications, whether Clawd jumps on screen for big
+  moments, and the screen mirror.
+- **Advanced Settings:** everything the difficulty sets (hunger speed, growing-up ages, old age,
+  legend, sickness, what counts as a happy or grumpy adult), sleep and night hours, time zone.
+
+| Difficulty | Hungry after | Grows up to adult | Ill when neglected | Old age |
+|---|---|---|---|---|
+| Easy | 18 h | 2 days | rarely | long |
+| **Normal** | 12 h | 3 days | sometimes | medium |
+| Hard | 8 h | 4 days | often | short |
+
+The time zone is n8n's own unless you set one. In view mode, Clawd's name and sound can also be
+changed on the clock (Apps → Clawd → gear button).
 
 All settings, and how to change them over MQTT: [docs/REFERENCE.md](docs/REFERENCE.md).
 

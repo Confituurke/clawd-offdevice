@@ -477,7 +477,8 @@ test('view: device commands apply, including a Star Catch result', () => {
   assert.equal(r.switchTo, false);
   assert.equal(r.publish.topic, 'clawd/state');
   assert.equal(r.publish.retain, true);
-  assert.equal(r.publish.message.split(',').length, 22);
+  assert.equal(r.publish.message.split(',').length, 23);
+  assert.equal(r.publish.message.split(',')[22], '0', 'field 22: not passed away of old age');
   assert.equal(E.run({ event: 'cmd', payload: '{"a":"rm -rf"}' }, store, cfg, T0 + 2000).ignore, true);
   assert.equal(E.run({ event: 'cmd', payload: 'not json {' }, store, cfg, T0 + 2000).ignore, true);
   assert.equal(E.run({ event: 'button', btn: 'select' }, store, cfg, T0 + 2000).ignore, true, 'buttons belong to the device');
@@ -686,4 +687,121 @@ test('n8n wrapper: without a TZ setting the pet uses n8n\'s time zone ($now.zone
   vm.createContext(ctx);
   const out = vm.runInContext(`(function(){${js}\n})()`, ctx);
   assert.equal(JSON.parse(out[0].json.config.message).TZ, 'Pacific/Auckland');
+});
+
+// ---- difficulty presets -----------------------------------------------------------------
+test('difficulty: presets fill in the values, Normal is the default game, a set value wins', () => {
+  const n = E.makeConfig({});
+  assert.equal(n.DIFFICULTY, 'normal');
+  for (const [k, v] of Object.entries(E.PRESETS.normal)) assert.equal(n[k], v, k);
+  assert.deepEqual([n.HUNGER_EMPTY_HOURS, n.CHILD_AT_HOURS, n.ADULT_AT_HOURS, n.SICK_CHANCE_PCT, n.CARE_HAPPY, n.CARE_GRUMPY], [12, 12, 72, 2, 200, -100], 'normal is today\'s game');
+  const h = E.makeConfig({ DIFFICULTY: 'Hard', HUNGER_EMPTY_HOURS: '', CHILD_AT_HOURS: '' });
+  assert.equal(h.DIFFICULTY, 'hard');
+  assert.equal(h.HUNGER_EMPTY_HOURS, 8, 'an empty Settings value follows the difficulty');
+  assert.equal(E.makeConfig({ DIFFICULTY: 'easy', HUNGER_EMPTY_HOURS: 10 }).HUNGER_EMPTY_HOURS, 10, 'a filled-in value wins');
+  const bad = E.makeConfig({ DIFFICULTY: 'nightmare' });
+  assert.equal(bad.DIFFICULTY, 'normal'); assert.ok(bad.warnings.includes('DIFFICULTY'));
+  assert.ok(E.makeConfig({ ADULT_AT_HOURS: 200 }).warnings.includes('GROWTH_AGES'), 'an adult older than an elder is refused');
+  assert.ok(E.makeConfig({ CARE_HAPPY: -200 }).warnings.includes('CARE_LEVELS'));
+  for (const d of ['easy', 'normal', 'hard']) assert.deepEqual(E.makeConfig({ DIFFICULTY: d }).warnings, [], `${d} is valid on its own`);
+});
+
+test('difficulty: easy is easier and hard is harder in every value', () => {
+  const [e, n, h] = ['easy', 'normal', 'hard'].map((d) => E.PRESETS[d]);
+  for (const k of ['HUNGER_EMPTY_HOURS', 'ELDER_LIFE_HOURS']) assert.ok(e[k] > n[k] && n[k] > h[k], k);
+  for (const k of ['EGG_HATCH_MIN', 'CHILD_AT_HOURS', 'ADULT_AT_HOURS', 'LEGEND_AFTER_HOURS', 'SICK_CHANCE_PCT', 'CARE_HAPPY', 'CARE_GRUMPY']) {
+    assert.ok(e[k] < n[k] && n[k] < h[k], k);
+  }
+});
+
+test('difficulty: choosing one live applies it, clearing earlier changes to its values only', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  E.run(setMsg({ HUNGER_EMPTY_HOURS: 20, SOUND: true }), store, {}, T0 + 1000);
+  let r = E.run(setMsg({ DIFFICULTY: 'hard' }), store, {}, T0 + 2000);
+  let now = JSON.parse(r.config.message);
+  assert.equal(now.DIFFICULTY, 'hard'); assert.equal(now.HUNGER_EMPTY_HOURS, 8, 'the preset really applies');
+  assert.equal(now.SOUND, true, 'other settings stay');
+  r = E.run(setMsg({ EGG_HATCH_MIN: 5 }), store, {}, T0 + 3000);
+  now = JSON.parse(r.config.message);
+  assert.equal(now.DIFFICULTY, 'hard'); assert.equal(now.EGG_HATCH_MIN, 5); assert.equal(now.CHILD_AT_HOURS, 16, 'one value changed, the rest still hard');
+  assert.deepEqual(E.run(setMsg({ DIFFICULTY: 'insane' }), store, {}, T0 + 4000).settings.rejected, ['DIFFICULTY']);
+  assert.deepEqual(E.run(setMsg({ CARE_HAPPY: -500 }), store, {}, T0 + 5000).settings.rejected, ['CARE_HAPPY'], 'happy must stay above grumpy');
+});
+
+test('difficulty: overnight, a pet in bed at 60% hunger - easy and normal wake with food, hard wakes hungry but alive', () => {
+  const left = {};
+  for (const d of ['easy', 'normal', 'hard']) {
+    const cfg = E.makeConfig({ TZ: 'Europe/Berlin', DIFFICULTY: d });
+    const bed = Date.parse('2026-09-28T22:00:00+02:00');
+    const s = alivePet(bed);
+    s.h = 6000;
+    noRandom(null, () => { for (let t = bed + 60000; t < bed + 10 * H; t += 60000) E.advanceTime(s, cfg, t); });
+    left[d] = s.h;
+    assert.equal(s.st, 1, `${d}: alive`);
+  }
+  assert.ok(left.easy > left.normal && left.normal > 1500 && left.hard < 1500 && left.hard > 0, JSON.stringify(left));
+});
+
+// ---- elder, legend, old age -----------------------------------------------------------------
+function agedPet(extra) { return alivePet(T0, Object.assign({ ev: 4, va: 1, age: 100 * H / 1000 }, extra)); }
+
+test('elder: an adult becomes an elder at ELDER_AT_HOURS and lives by how it was raised', () => {
+  const cfg = E.makeConfig({});
+  const s = agedPet({ age: 168 * 3600 - 1 });
+  E.checkEvolution(s, cfg, T0);
+  assert.equal(s.ev, 4);
+  s.age += 1;
+  E.checkEvolution(s, cfg, T0);
+  assert.equal(s.ev, 5); assert.equal(s.eld, 168 * 3600); assert.equal(s.ev_k, 3, 'the evolve flash');
+  for (const [va, hours] of [[0, 144], [1, 96], [2, 48]]) {
+    const e = agedPet({ ev: 5, va, eld: 168 * 3600, age: (168 + hours) * 3600 - 1 });
+    E.checkEvolution(e, cfg, T0);
+    assert.equal(e.st, 1, `type ${va}: still alive just before ${hours} h`);
+    e.age += 1;
+    E.checkEvolution(e, cfg, T0);
+    assert.deepEqual([e.st, e.old, e.ev_k], [2, 1, 11], `type ${va}: passes away of old age after ${hours} h as an elder`);
+  }
+});
+
+test('legend: only a happy elder that stays healthy; it lives longest', () => {
+  const cfg = E.makeConfig({ LEGEND_AFTER_HOURS: 2, SLEEP_FROM: 0, SLEEP_TO: 0 });
+  const grow = (extra, hours) => {
+    const s = agedPet(Object.assign({ ev: 5, eld: 168 * 3600, age: 168 * 3600 }, extra));
+    noRandom(null, () => { for (let t = T0 + 60000; t <= T0 + hours * H; t += 60000) { s.h = 10000; E.advanceTime(s, cfg, t); } });
+    return s;
+  };
+  assert.equal(grow({ va: 0 }, 3).ev, 6, 'happy and healthy: legend');
+  assert.equal(grow({ va: 1 }, 3).ev, 5, 'a normal elder never');
+  assert.equal(grow({ va: 0, sk: 1 }, 3).ev, 5, 'not while sick');
+  const lg = grow({ va: 0 }, 3);
+  assert.ok(lg.lgd > 0);
+  assert.equal(E.lifeEnd(lg, cfg), lg.lgd + cfg.ELDER_LIFE_HOURS * 3600 * 1.5);
+  assert.ok(E.lifeEnd(lg, cfg) > lg.eld + cfg.ELDER_LIFE_HOURS * 3600 * 1.5, 'longer than a happy elder');
+});
+
+test('old age: shown as a spirit, published in field 22, switches Clawd on screen, and a legend\'s egg gets a head start', () => {
+  const store = {};
+  E.run({ event: 'tick' }, store, {}, T0);
+  Object.assign(store.clawd, { st: 1, ev: 6, va: 0, eld: 100, lgd: 200, age: 200 + 144 * 3600 - 1, gen: 3 });
+  const r = E.run({ event: 'tick' }, store, {}, T0 + 2000);
+  assert.deepEqual([store.clawd.st, store.clawd.old], [2, 1]);
+  assert.equal(r.switchTo, true);
+  assert.equal(r.publish.message.split(',')[22], '1');
+  const halo = r.payload.draw.find((c) => c[0] === 'pixels' && c[1] === '#FFD34D');
+  assert.ok(halo, 'a gold halo instead of the tombstone');
+  assert.ok(!r.payload.draw.some((c) => c[0] === 'pixels' && c[1] === '#9AA0A6' && c.length > 20), 'no tombstone');
+  E.run({ event: 'action', name: 'reset' }, store, {}, T0 + 3000);
+  assert.deepEqual([store.clawd.st, store.clawd.gen, store.clawd.cs, store.clawd.warm], [0, 4, 50, 900], 'legend\'s egg: half the hatch time, care +50');
+  E.run({ event: 'cmd', payload: 'warm', topic: 'clawd/ha' }, store, {}, T0 + 4000);
+  assert.equal(store.clawd.warm, 900, 'warming never takes warmth away');
+});
+
+test('elder and legend: stats name the stage, the old save format upgrades', () => {
+  const cfg = E.makeConfig({});
+  assert.match(E.statsText(agedPet({ ev: 5 }), cfg), /^Clawd  ELDER  AGE/);
+  assert.match(E.statsText(agedPet({ ev: 6 }), cfg), /^Clawd  LEGEND  AGE/);
+  const old = { st: 1, ev: 4, va: 0, h: 5000, ha: 5000, en: 5000, cl: 5000, hp: 10000, age: 300000, gen: 1, cs: 250 };
+  E.upgradeState(old, T0);
+  assert.deepEqual([old.eld, old.lgd, old.lgh, old.old], [0, 0, 0, 0]);
 });

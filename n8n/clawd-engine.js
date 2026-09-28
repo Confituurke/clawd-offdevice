@@ -35,7 +35,7 @@ const DEFAULTS = {
   TEEN_AT_HOURS: 36,
   ADULT_AT_HOURS: 72,
   ELDER_AT_HOURS: 168,        // adult -> elder
-  ELDER_LIFE_HOURS: 96,       // an elder's life: x1.5 if raised happy, x0.5 if grumpy; a legend's after it becomes one
+  ELDER_LIFE_HOURS: 96,       // an elder's life, x1.5 if raised happy (a grumpy adult never becomes an elder: it passes away at elder age + half this)
   LEGEND_AFTER_HOURS: 48,     // healthy hours a happy elder needs to become a legend
   SICK_CHANCE_PCT: 2,         // chance per decay step to fall ill while neglected (the original: 2)
   CARE_HAPPY: 200,            // care score for a happy adult (the original: 200) ...
@@ -95,8 +95,6 @@ const SPR = {
         b: ['.........t', '..t..t..tt', 'c.OOOO.c.t', 'OtOOOOtO.t', 'OOwOOwOO.t', '.OOeeOO..t', 'd.d...d..t'] },  // elder, happy
   e1: { a: ['.........t', '........tt', 'c.oooo.c.t', 'otooooto.t', 'oowoowoo.t', '.ooeeoo..t', '.d.d..d..t'],
         b: ['.........t', '........tt', 'c.oooo.c.t', 'otooooto.t', 'oowoowoo.t', '.ooeeoo..t', 'd.d...d..t'] },  // elder, normal
-  e2: { a: ['.........t', '........tt', 'x.qqqq.x.t', 'qgqqqqgq.t', 'qqrqqrqq.t', '.qqeeqq..t', '.d.d..d..t'],
-        b: ['.........t', '........tt', 'x.qqqq.x.t', 'qgqqqqgq.t', 'qqrqqrqq.t', '.qqeeqq..t', 'd.d...d..t'] },  // elder, grumpy
   lg: { a: ['..ywwy..', 'c.yyyy.c', '.yyyyyy.', 'yymyymyy', '.yyyyyy.', '..yyyy..', '.O.O.O.O'],
         b: ['...ww...', 'ccyyyycc', '.yyyyyy.', 'yymyymyy', '.yyyyyy.', '..yyyy..', 'O.O.O.O.'] },    // legend
   spirit: ['.yyyy.', '......', 'e.ee.e', 'eteete', '.eeee.', '.e..e.'],               // passed away of old age
@@ -176,8 +174,8 @@ const LIVE_SETTINGS = [
   ['ELDER_LIFE_HOURS', 'number', 'Elder lifespan', 'mdi:timer-sand', 'h', 1],
   ['LEGEND_AFTER_HOURS', 'number', 'Legend after', 'mdi:crown', 'h', 1],
   ['SICK_CHANCE_PCT', 'number', 'Sickness chance', 'mdi:virus', '%', 1],
-  ['CARE_HAPPY', 'number', 'Care for a happy adult', 'mdi:emoticon-happy-outline', '', 10],
-  ['CARE_GRUMPY', 'number', 'Care for a grumpy adult', 'mdi:emoticon-angry-outline', '', 10],
+  ['CARE_HAPPY', 'number', 'Care for a happy adult', 'mdi:emoticon-happy-outline', '', 1],
+  ['CARE_GRUMPY', 'number', 'Care for a grumpy adult', 'mdi:emoticon-angry-outline', '', 1],
   ['SLEEP_FROM', 'number', 'Sleeps from', 'mdi:sleep', '', 1],
   ['SLEEP_TO', 'number', 'Sleeps until', 'mdi:alarm', '', 1],
   ['NIGHT_FROM', 'number', 'Night scene from', 'mdi:weather-night', '', 1],
@@ -390,10 +388,13 @@ function healthyTime(s, dt) {
   if (s.st === 1 && s.ev === 5 && s.va === 0 && s.hp >= 8000 && s.sk === 0) s.lgh = (s.lgh || 0) + dt;
 }
 
-// When an elder or legend passes away of old age (age in s), or null.
+// When a pet passes away of old age (age in s), or null. A grumpy (neglected)
+// adult never becomes an elder: it passes away as an adult, half an elder's
+// lifespan after the elder age.
 function lifeEnd(s, cfg) {
   const life = cfg.ELDER_LIFE_HOURS * 3600;
-  if (s.ev === 5) return s.eld + life * (s.va === 0 ? 1.5 : s.va === 2 ? 0.5 : 1);
+  if (s.ev === 4 && s.va === 2) return cfg.ELDER_AT_HOURS * 3600 + life * 0.5;
+  if (s.ev === 5) return s.eld + life * (s.va === 0 ? 1.5 : 1);
   if (s.ev === 6) return s.lgd + life * 1.5;
   return null;
 }
@@ -403,7 +404,7 @@ function checkEvolution(s, cfg, nowMs) {
   if (s.ev === 1 && s.age >= cfg.CHILD_AT_HOURS * 3600) evolve(s, 2, nowMs, cfg);
   else if (s.ev === 2 && s.age >= cfg.TEEN_AT_HOURS * 3600) evolve(s, 3, nowMs, cfg);
   else if (s.ev === 3 && s.age >= cfg.ADULT_AT_HOURS * 3600) evolve(s, 4, nowMs, cfg);
-  else if (s.ev === 4 && s.age >= cfg.ELDER_AT_HOURS * 3600) evolve(s, 5, nowMs, cfg);
+  else if (s.ev === 4 && s.va !== 2 && s.age >= cfg.ELDER_AT_HOURS * 3600) evolve(s, 5, nowMs, cfg);   // not a grumpy adult
   else if (s.ev === 5 && s.va === 0 && s.lgh >= cfg.LEGEND_AFTER_HOURS * 3600) evolve(s, 6, nowMs, cfg);
   else {
     const end = lifeEnd(s, cfg);
@@ -598,7 +599,7 @@ function creature(s) {
   if (s.ev === 2) return { pair: SPR.b2, w: 6, h: 5, skin: CM.o };
   if (s.ev === 3) return { pair: SPR.b3, w: 7, h: 6, skin: CM.o };
   if (s.ev === 6) return { pair: SPR.lg, w: 8, h: 7, skin: CM.y };
-  if (s.ev === 5) return { pair: s.va === 0 ? SPR.e0 : s.va === 2 ? SPR.e2 : SPR.e1, w: 10, h: 7, skin: s.va === 0 ? CM.O : s.va === 2 ? CM.q : CM.o, slow: true };
+  if (s.ev === 5) return { pair: s.va === 0 ? SPR.e0 : SPR.e1, w: 10, h: 7, skin: s.va === 0 ? CM.O : CM.o, slow: true };
   if (s.va === 0) return { pair: SPR.a0, w: 8, h: 7, skin: CM.O };
   if (s.va === 2) return { pair: SPR.a2, w: 8, h: 7, skin: CM.q };
   return { pair: SPR.a1, w: 8, h: 7, skin: CM.o };

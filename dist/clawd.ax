@@ -188,12 +188,8 @@ elif e == 6
 a = "..ywwy..|c.yyyy.c|.yyyyyy.|yymyymyy|.yyyyyy.|..yyyy..|.O.O.O.O"
 b = "...ww...|ccyyyycc|.yyyyyy.|yymyymyy|.yyyyyy.|..yyyy..|O.O.O.O."
 elif e == 5
-var k = s[3] == 0 ? "O" : (s[3] == 2 ? "q" : "o")
-var t = s[3] == 0 ? "..t..t..tt" : "........tt"
-var c = s[3] == 2 ? "x" : "c"
-var br = s[3] == 2 ? "g" : "t"
-var ey = s[3] == 2 ? "r" : "w"
-var top = ".........t|" + t + "|" + c + "." + k + k + k + k + "." + c + ".t|" + k + br + k + k + k + k + br + k + ".t|" + k + k + ey + k + k + ey + k + k + ".t|." + k + k + "ee" + k + k + "..t|"
+var k = s[3] == 0 ? "O" : "o"
+var top = ".........t|" + (s[3] == 0 ? "..t..t..tt" : "........tt") + "|c." + k + k + k + k + ".c.t|" + k + "t" + k + k + k + k + "t" + k + ".t|" + k + k + "w" + k + k + "w" + k + k + ".t|." + k + k + "ee" + k + k + "..t|"
 a = top + ".d.d..d..t"
 b = top + "d.d...d..t"
 elif s[3] == 0

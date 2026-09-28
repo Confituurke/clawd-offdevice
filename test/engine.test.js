@@ -746,7 +746,7 @@ test('difficulty: overnight, a pet in bed at 60% hunger - easy and normal wake w
 // ---- elder, legend, old age -----------------------------------------------------------------
 function agedPet(extra) { return alivePet(T0, Object.assign({ ev: 4, va: 1, age: 100 * H / 1000 }, extra)); }
 
-test('elder: an adult becomes an elder at ELDER_AT_HOURS and lives by how it was raised', () => {
+test('elder: a happy or normal adult becomes an elder at ELDER_AT_HOURS and lives by how it was raised', () => {
   const cfg = E.makeConfig({});
   const s = agedPet({ age: 168 * 3600 - 1 });
   E.checkEvolution(s, cfg, T0);
@@ -754,7 +754,7 @@ test('elder: an adult becomes an elder at ELDER_AT_HOURS and lives by how it was
   s.age += 1;
   E.checkEvolution(s, cfg, T0);
   assert.equal(s.ev, 5); assert.equal(s.eld, 168 * 3600); assert.equal(s.ev_k, 3, 'the evolve flash');
-  for (const [va, hours] of [[0, 144], [1, 96], [2, 48]]) {
+  for (const [va, hours] of [[0, 144], [1, 96]]) {
     const e = agedPet({ ev: 5, va, eld: 168 * 3600, age: (168 + hours) * 3600 - 1 });
     E.checkEvolution(e, cfg, T0);
     assert.equal(e.st, 1, `type ${va}: still alive just before ${hours} h`);
@@ -762,6 +762,21 @@ test('elder: an adult becomes an elder at ELDER_AT_HOURS and lives by how it was
     E.checkEvolution(e, cfg, T0);
     assert.deepEqual([e.st, e.old, e.ev_k], [2, 1, 11], `type ${va}: passes away of old age after ${hours} h as an elder`);
   }
+});
+
+test('elder: a grumpy (neglected) adult never becomes an elder and passes away as an adult', () => {
+  const cfg = E.makeConfig({});
+  const g = agedPet({ va: 2, age: 168 * 3600 });
+  E.checkEvolution(g, cfg, T0);
+  assert.equal(g.ev, 4, 'still an adult at elder age');
+  g.age = (168 + 48) * 3600 - 1;
+  E.checkEvolution(g, cfg, T0);
+  assert.equal(g.st, 1, 'alive just before elder age + half an elder\'s lifespan');
+  g.age += 1;
+  E.checkEvolution(g, cfg, T0);
+  assert.deepEqual([g.st, g.ev, g.old], [2, 4, 1], 'passes away of old age as an adult');
+  const h = E.makeConfig({ DIFFICULTY: 'hard' });
+  assert.equal(E.lifeEnd(agedPet({ va: 2 }), h), (192 + 36) * 3600, 'follows the difficulty');
 });
 
 test('legend: only a happy elder that stays healthy; it lives longest', () => {

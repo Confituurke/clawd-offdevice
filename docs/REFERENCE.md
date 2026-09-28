@@ -30,7 +30,7 @@ listed under `warnings` in the engine's output.
 | `HUNGER_EMPTY_HOURS` | *(difficulty)* | awake, full to empty. Normal 12 h; the original is ~4 h (`3.97`), which starves an unfed pet overnight |
 | `EGG_HATCH_MIN` | *(difficulty)* | |
 | `CHILD_AT_HOURS` / `TEEN_AT_HOURS` / `ADULT_AT_HOURS` / `ELDER_AT_HOURS` | *(difficulty)* | ages at which Clawd grows up |
-| `ELDER_LIFE_HOURS` | *(difficulty)* | how long an elder lives: x1.5 if raised happy, x0.5 if grumpy |
+| `ELDER_LIFE_HOURS` | *(difficulty)* | how long an elder lives, x1.5 if raised happy; a grumpy adult never becomes an elder and passes away at elder age + half of this |
 | `LEGEND_AFTER_HOURS` | *(difficulty)* | healthy hours a happy elder needs to become a legend |
 | `SICK_CHANCE_PCT` | *(difficulty)* | chance per decay step to fall ill while neglected |
 | `CARE_HAPPY` / `CARE_GRUMPY` | *(difficulty)* | care score for a happy / grumpy adult |
@@ -66,7 +66,7 @@ mode) has the pet's rules as its settings.
 | Hungry after (`HUNGER_EMPTY_HOURS`) | 18 h | 12 h | 8 h |
 | Egg hatches after | 15 min | 30 min | 45 min |
 | Child / teen / adult / elder at | 8 / 24 / 48 / 144 h | 12 / 36 / 72 / 168 h | 16 / 48 / 96 / 192 h |
-| Elder lifespan (x1.5 happy, x0.5 grumpy) | 144 h | 96 h | 72 h |
+| Elder lifespan (x1.5 happy; a grumpy adult: half, as an adult) | 144 h | 96 h | 72 h |
 | Legend after (healthy hours as a happy elder) | 24 h | 48 h | 72 h |
 | Sickness chance while neglected | 1% | 2% | 3% |
 | Care for a happy / grumpy adult | 150 / -150 | 200 / -100 | 250 / -50 |
@@ -82,9 +82,16 @@ values filled in in the Settings node still win.
 
 ## Life stages
 
-Egg → baby → child → teen → **adult** (happy, normal or grumpy, from the care score) → **elder**
-(`ELDER_AT_HOURS`) → passes away of old age after `ELDER_LIFE_HOURS` (x1.5 for a happy elder,
-x1 normal, x0.5 grumpy). A happy elder that stays healthy (health 80% or more, not ill) for
+Egg → baby → child → teen → **adult** → **elder** (`ELDER_AT_HOURS`) → **legend**. The care score
+decides the adult type, and the type decides the rest:
+
+| Adult | Becomes an elder? | Old age | Legend? |
+|---|---|---|---|
+| **Happy** (care ≥ `CARE_HAPPY`) | yes | `ELDER_LIFE_HOURS` x1.5 | yes, if it stays healthy |
+| **Normal** | yes | `ELDER_LIFE_HOURS` | no |
+| **Grumpy** (care ≤ `CARE_GRUMPY`) | no, stays an adult | passes away at `ELDER_AT_HOURS` + half of `ELDER_LIFE_HOURS` | no |
+
+A happy elder that stays healthy (health 80% or more, not ill) for
 `LEGEND_AFTER_HOURS` becomes a **legend**: golden, and it lives `ELDER_LIFE_HOURS` x1.5 more from
 that moment. A legend's egg hatches in half the time and starts with 50 care.
 

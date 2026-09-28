@@ -47,7 +47,7 @@ whenever something visible changes, and at least once a minute:
 | 0 | protocol version (2) | | 11 | asleep (0/1) |
 | 1 | stage: 0 egg, 1 alive, 2 dead | | 12 | night scenery (0/1) |
 | 2 | evolution: 0 egg, 1 baby, 2 child, 3 teen, 4 adult, 5 elder, 6 legend | | 13 | generation |
-| 3 | adult (and elder) look: 0 happy, 1 normal, 2 grumpy | | 14 | care score |
+| 3 | adult (and elder) type: 0 happy, 1 normal, 2 grumpy (a grumpy adult never becomes an elder) | | 14 | care score |
 | 4-7 | hunger, happiness, energy, cleanliness (0-10000) | | 15 | age in seconds |
 | 8 | health (0-10000) | | 16 | last effect id (1 feed ... 9 death, 10 show stats, 11 passed away of old age) |
 | 9 | poops (0-3) | | 17 | effect counter (changes = play the effect) |

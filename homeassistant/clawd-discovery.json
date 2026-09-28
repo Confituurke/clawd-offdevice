@@ -433,7 +433,7 @@
       "mode": "box",
       "min": -1000,
       "max": 1000,
-      "step": 10,
+      "step": 1,
       "command_template": "{\"CARE_HAPPY\": {{ value }} }",
       "value_template": "{{ value_json.CARE_HAPPY }}"
     },
@@ -448,7 +448,7 @@
       "mode": "box",
       "min": -1000,
       "max": 1000,
-      "step": 10,
+      "step": 1,
       "command_template": "{\"CARE_GRUMPY\": {{ value }} }",
       "value_template": "{{ value_json.CARE_GRUMPY }}"
     },

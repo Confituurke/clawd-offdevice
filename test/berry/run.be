@@ -184,9 +184,9 @@ frame(app, 20)
 check(app.W == 10 && app.H == 7, "elder sprite is 10 x 7 (with its cane): " + str(app.W) + "x" + str(app.H))
 check(px(12, 0) == 0x9AA0A6 && px(12, 6) == 0x9AA0A6, "the cane stands right of the elder")
 check(px(5, 1) == 0x9AA0A6, "a happy elder's silver crest")
-mqtt.deliver("clawd/state", sline("elder2"))
+mqtt.deliver("clawd/state", sline("elder1"))
 frame(app, 20)
-check(px(5, 4) == 0xE05540, "a grumpy elder keeps its red eyes")
+check(app.W == 10 && px(5, 1) == 0 && px(12, 1) == 0x9AA0A6, "a normal elder: no crest, same cane")
 app._a(6)
 check(string.find(app.b, "  ELDER  AGE") >= 0, "stats name the elder: " + str(app.b))
 app._x()
@@ -301,6 +301,22 @@ check(app.s[2] == 5 && core.t["d"] > 0, "device mode: elder")
 core.t["g"] = core.t["d"] + 96 * 3600
 advance(1000) app.loop()
 check(app.s[1] == 2 && app.s[22] == 1 && app.fk == 11, "device mode: passed away of old age")
+
+# a grumpy adult never becomes an elder; it passes away as an adult at elder age + 48 h
+press(app)
+press(app)
+frame(app, 3100)
+core.t["s"] = 1
+core.t["v"] = 4
+core.t["u"] = 2
+core.t["x"] = 10000
+core.t["h"] = 10000
+core.t["g"] = 168 * 3600
+advance(1000) app.loop()
+check(app.s[2] == 4 && app.s[1] == 1, "device mode: a grumpy adult stays an adult")
+core.t["g"] = (168 + 48) * 3600
+advance(1000) app.loop()
+check(app.s[1] == 2 && app.s[2] == 4 && app.s[22] == 1, "device mode: the grumpy adult passes away of old age")
 
 if failures == 0
   print("ALL OK")

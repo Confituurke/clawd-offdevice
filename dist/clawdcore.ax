@@ -9,7 +9,7 @@
 # @config teen number "Teen at" default=36 min=0 max=8760 unit=h
 # @config adult number "Adult at" default=72 min=0 max=8760 unit=h
 # @config elder number "Elder at" default=168 min=0 max=8760 unit=h
-# @config elife number "Elder lifespan" default=96 min=1 max=8760 unit=h help="x1.5 if raised happy, x0.5 if grumpy"
+# @config elife number "Elder lifespan" default=96 min=1 max=8760 unit=h help="x1.5 if raised happy; a grumpy adult never becomes an elder and lives half of this past the elder age"
 # @config legend number "Legend after" default=48 min=1 max=8760 unit=h help="healthy hours a happy elder needs"
 # @config sick number "Sickness chance" default=2 min=0 max=100 unit=%
 # @config chappy number "Care for happy" default=200 min=-1000 max=1000
@@ -191,9 +191,9 @@ if t["s"] != 1 return end
 if e == 1 && ag >= m.ag[0] m.evolve(2)
 elif e == 2 && ag >= m.ag[1] m.evolve(3)
 elif e == 3 && ag >= m.ag[2] m.evolve(4)
-elif e == 4 && ag >= m.ag[3] m.evolve(5)
+elif e == 4 && t["u"] != 2 && ag >= m.ag[3] m.evolve(5)
 elif e == 5 && t["u"] == 0 && t["lh"] >= m.lg m.evolve(6)
-elif e >= 5 && ag >= (e == 6 ? t["ld"] + m.el * 3 / 2 : t["d"] + (t["u"] == 0 ? m.el * 3 / 2 : (t["u"] == 2 ? m.el / 2 : m.el)))
+elif (e >= 5 || (e == 4 && t["u"] == 2)) && ag >= (e == 6 ? t["ld"] + m.el * 3 / 2 : (e == 4 ? m.ag[3] + m.el / 2 : t["d"] + (t["u"] == 0 ? m.el * 3 / 2 : m.el)))
 t["s"] = 2
 t["od"] = 1
 m.fx(11)

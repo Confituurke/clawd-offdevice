@@ -302,6 +302,27 @@ core.t["g"] = core.t["d"] + 96 * 3600
 advance(1000) app.loop()
 check(app.s[1] == 2 && app.s[22] == 1 && app.fk == 11, "device mode: passed away of old age")
 
+# a happy elder only counts towards legend while its care is at least 400 (normal)
+press(app)
+press(app)
+frame(app, 3100)
+core.t["s"] = 1
+core.t["v"] = 5
+core.t["u"] = 0
+core.t["x"] = 10000
+core.t["h"] = 10000
+core.t["g"] = 170 * 3600
+core.t["d"] = 168 * 3600
+core.t["lh"] = 48 * 3600 - 1
+core.t["z"] = 399
+advance(1000) app.loop()
+check(app.s[2] == 5, "device mode: no legend while care is below 400")
+core.t["z"] = 400
+advance(1000) app.loop()
+advance(1000) app.loop()
+check(app.s[2] == 6, "device mode: a well-cared-for happy elder becomes a legend")
+core.t["s"] = 2
+
 # a grumpy adult never becomes an elder; it passes away as an adult at elder age + 48 h
 press(app)
 press(app)

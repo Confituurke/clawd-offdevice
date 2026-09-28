@@ -40,6 +40,7 @@ const DEFAULTS = {
   SICK_CHANCE_PCT: 2,         // chance per decay step to fall ill while neglected (the original: 2)
   CARE_HAPPY: 200,            // care score for a happy adult (the original: 200) ...
   CARE_GRUMPY: -100,          // ... and for a grumpy one (the original: -100)
+  CARE_LEGEND: 400,           // care a happy elder must keep: its hours towards legend only count at or above it
   SLEEP_FROM: 22, SLEEP_TO: 8,   // auto-sleep window, local hours
   NIGHT_FROM: 20, NIGHT_TO: 6,   // night scenery window, local hours
   SOUND: false,               // play RTTTL effects (off by default, like the original)
@@ -61,11 +62,11 @@ const DEFAULTS = {
 // changes can still set any single value on top of a preset.
 const PRESETS = {
   easy:   { HUNGER_EMPTY_HOURS: 18, EGG_HATCH_MIN: 15, CHILD_AT_HOURS: 8, TEEN_AT_HOURS: 24, ADULT_AT_HOURS: 48, ELDER_AT_HOURS: 144,
-    ELDER_LIFE_HOURS: 144, LEGEND_AFTER_HOURS: 24, SICK_CHANCE_PCT: 1, CARE_HAPPY: 150, CARE_GRUMPY: -150 },
+    ELDER_LIFE_HOURS: 144, LEGEND_AFTER_HOURS: 24, SICK_CHANCE_PCT: 1, CARE_HAPPY: 150, CARE_GRUMPY: -150, CARE_LEGEND: 300 },
   normal: { HUNGER_EMPTY_HOURS: 12, EGG_HATCH_MIN: 30, CHILD_AT_HOURS: 12, TEEN_AT_HOURS: 36, ADULT_AT_HOURS: 72, ELDER_AT_HOURS: 168,
-    ELDER_LIFE_HOURS: 96, LEGEND_AFTER_HOURS: 48, SICK_CHANCE_PCT: 2, CARE_HAPPY: 200, CARE_GRUMPY: -100 },
+    ELDER_LIFE_HOURS: 96, LEGEND_AFTER_HOURS: 48, SICK_CHANCE_PCT: 2, CARE_HAPPY: 200, CARE_GRUMPY: -100, CARE_LEGEND: 400 },
   hard:   { HUNGER_EMPTY_HOURS: 8, EGG_HATCH_MIN: 45, CHILD_AT_HOURS: 16, TEEN_AT_HOURS: 48, ADULT_AT_HOURS: 96, ELDER_AT_HOURS: 192,
-    ELDER_LIFE_HOURS: 72, LEGEND_AFTER_HOURS: 72, SICK_CHANCE_PCT: 3, CARE_HAPPY: 250, CARE_GRUMPY: -50 }
+    ELDER_LIFE_HOURS: 72, LEGEND_AFTER_HOURS: 72, SICK_CHANCE_PCT: 3, CARE_HAPPY: 250, CARE_GRUMPY: -50, CARE_LEGEND: 500 }
 };
 const PRESET_KEYS = Object.keys(PRESETS.normal);
 
@@ -154,7 +155,7 @@ const NUM_RANGES = {
   HUNGER_EMPTY_HOURS: [0.5, 24 * 30], EGG_HATCH_MIN: [1, 24 * 60],
   CHILD_AT_HOURS: [0, 24 * 365], TEEN_AT_HOURS: [0, 24 * 365], ADULT_AT_HOURS: [0, 24 * 365], ELDER_AT_HOURS: [0, 24 * 365],
   ELDER_LIFE_HOURS: [1, 24 * 365], LEGEND_AFTER_HOURS: [1, 24 * 365], SICK_CHANCE_PCT: [0, 100],
-  CARE_HAPPY: [-1000, 1000], CARE_GRUMPY: [-1000, 1000],
+  CARE_HAPPY: [-1000, 1000], CARE_GRUMPY: [-1000, 1000], CARE_LEGEND: [-1000, 5000],
   SLEEP_FROM: [0, 23], SLEEP_TO: [0, 23], NIGHT_FROM: [0, 23], NIGHT_TO: [0, 23],
   OFFSCREEN_REFRESH_SEC: [5, 3600], STALE_AFTER_SEC: [0, 86400]
 };
@@ -176,6 +177,7 @@ const LIVE_SETTINGS = [
   ['SICK_CHANCE_PCT', 'number', 'Sickness chance', 'mdi:virus', '%', 1],
   ['CARE_HAPPY', 'number', 'Care for a happy adult', 'mdi:emoticon-happy-outline', '', 1],
   ['CARE_GRUMPY', 'number', 'Care for a grumpy adult', 'mdi:emoticon-angry-outline', '', 1],
+  ['CARE_LEGEND', 'number', 'Care for a legend', 'mdi:crown-outline', '', 1],
   ['SLEEP_FROM', 'number', 'Sleeps from', 'mdi:sleep', '', 1],
   ['SLEEP_TO', 'number', 'Sleeps until', 'mdi:alarm', '', 1],
   ['NIGHT_FROM', 'number', 'Night scene from', 'mdi:weather-night', '', 1],
@@ -253,9 +255,10 @@ function makeConfig(raw) {
     const p = PRESETS[cfg.DIFFICULTY];
     for (const k of ['CHILD_AT_HOURS', 'TEEN_AT_HOURS', 'ADULT_AT_HOURS', 'ELDER_AT_HOURS']) cfg[k] = p[k];
   }
-  if (!(cfg.CARE_GRUMPY < cfg.CARE_HAPPY)) {
+  if (!(cfg.CARE_GRUMPY < cfg.CARE_HAPPY && cfg.CARE_HAPPY <= cfg.CARE_LEGEND)) {
     warnings.push('CARE_LEVELS');
-    cfg.CARE_HAPPY = PRESETS[cfg.DIFFICULTY].CARE_HAPPY; cfg.CARE_GRUMPY = PRESETS[cfg.DIFFICULTY].CARE_GRUMPY;
+    const p = PRESETS[cfg.DIFFICULTY];
+    cfg.CARE_HAPPY = p.CARE_HAPPY; cfg.CARE_GRUMPY = p.CARE_GRUMPY; cfg.CARE_LEGEND = p.CARE_LEGEND;
   }
   for (const k of ['SOUND', 'NOTIFY', 'SWITCH_ON_EVENTS', 'BURST', 'MIRROR']) {
     if (pick(k) === undefined) continue;
@@ -332,7 +335,7 @@ function applyCatchup(s, dtSec, cfg) {
     s.pt -= el * 0.3;
     if (s.pt <= 0) { s.pt = 0; s.pp = Math.min(s.pp + 1, 3); s.cl = c10k(s.cl - 1500); }
   }
-  healthyTime(s, el);
+  healthyTime(s, el, cfg);
 }
 
 // One decay step: the original's 10-second branch, formula for formula.
@@ -383,9 +386,11 @@ function evolve(s, stage, nowMs, cfg) {
   fx(s, 3, nowMs);
 }
 
-// A happy elder that stays healthy (health 80%+, not sick) counts towards legend.
-function healthyTime(s, dt) {
-  if (s.st === 1 && s.ev === 5 && s.va === 0 && s.hp >= 8000 && s.sk === 0) s.lgh = (s.lgh || 0) + dt;
+// A happy elder counts towards legend while it stays well raised: healthy
+// (health 80%+, not sick) and cared for (care score at least CARE_LEGEND).
+function healthyTime(s, dt, cfg) {
+  cfg = cfg || DEFAULTS;
+  if (s.st === 1 && s.ev === 5 && s.va === 0 && s.hp >= 8000 && s.sk === 0 && s.cs >= cfg.CARE_LEGEND) s.lgh = (s.lgh || 0) + dt;
 }
 
 // When a pet passes away of old age (age in s), or null. A grumpy (neglected)
@@ -451,7 +456,7 @@ function advanceTime(s, cfg, nowMs) {
   const steps = Math.min(Math.ceil(3600 / cfg.STEP_SEC), Math.floor(s.decAcc / cfg.STEP_SEC));
   s.decAcc -= steps * cfg.STEP_SEC;
   for (let i = 0; i < steps; i++) decayStep(s, nowMs, cfg);
-  healthyTime(s, dt);
+  healthyTime(s, dt, cfg);
 
   checkEvolution(s, cfg, nowMs);
 }

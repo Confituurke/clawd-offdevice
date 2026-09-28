@@ -251,7 +251,7 @@ test('Home Assistant settings entities: one per live setting, and every command 
   // and what the state template would read back.
   const samples = { DIFFICULTY: 'hard', PET_NAME: 'Mr "Pinch"', TZ: 'Europe/Paris', HUNGER_EMPTY_HOURS: 9.5, EGG_HATCH_MIN: 20, CHILD_AT_HOURS: 10,
     TEEN_AT_HOURS: 30, ADULT_AT_HOURS: 60, ELDER_AT_HOURS: 200, ELDER_LIFE_HOURS: 50, LEGEND_AFTER_HOURS: 30, SICK_CHANCE_PCT: 5,
-    CARE_HAPPY: 300, CARE_GRUMPY: -200, SLEEP_FROM: 23, SLEEP_TO: 7, NIGHT_FROM: 21, NIGHT_TO: 5 };
+    CARE_HAPPY: 300, CARE_GRUMPY: -200, CARE_LEGEND: 400, SLEEP_FROM: 23, SLEEP_TO: 7, NIGHT_FROM: 21, NIGHT_TO: 5 };
   assert.deepEqual(byKey.DIFFICULTY.options, ['easy', 'normal', 'hard']);
   // Home Assistant only accepts multiples of `step` above `min`: every whole number (and every preset
   // value, and one off it) must be enterable, so nobody gets "enter a valid value" for e.g. 149.

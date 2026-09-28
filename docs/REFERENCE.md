@@ -34,6 +34,7 @@ listed under `warnings` in the engine's output.
 | `LEGEND_AFTER_HOURS` | *(difficulty)* | healthy hours a happy elder needs to become a legend |
 | `SICK_CHANCE_PCT` | *(difficulty)* | chance per decay step to fall ill while neglected |
 | `CARE_HAPPY` / `CARE_GRUMPY` | *(difficulty)* | care score for a happy / grumpy adult |
+| `CARE_LEGEND` | *(difficulty)* | care score a happy elder must keep: its hours towards legend only count at or above it |
 | `SLEEP_FROM` / `SLEEP_TO` | `22` / `8` | auto-sleep, hours of the day |
 | `NIGHT_FROM` / `NIGHT_TO` | `20` / `6` | night scenery |
 | `SOUND` | `false` | effect tunes on the buzzer |
@@ -70,6 +71,7 @@ mode) has the pet's rules as its settings.
 | Legend after (healthy hours as a happy elder) | 24 h | 48 h | 72 h |
 | Sickness chance while neglected | 1% | 2% | 3% |
 | Care for a happy / grumpy adult | 150 / -150 | 200 / -100 | 250 / -50 |
+| Care a happy elder must keep for legend | 300 | 400 | 500 |
 
 Normal is the original game's rules at a friendlier speed. Easy is forgiving: slower hunger, faster
 growing up, rarely ill, and an easier path to a happy adult and a long old age. Hard is the
@@ -87,12 +89,13 @@ decides the adult type, and the type decides the rest:
 
 | Adult | Becomes an elder? | Old age | Legend? |
 |---|---|---|---|
-| **Happy** (care ≥ `CARE_HAPPY`) | yes | `ELDER_LIFE_HOURS` x1.5 | yes, if it stays healthy |
+| **Happy** (care ≥ `CARE_HAPPY`) | yes | `ELDER_LIFE_HOURS` x1.5 | yes, if it stays well raised as an elder |
 | **Normal** | yes | `ELDER_LIFE_HOURS` | no |
 | **Grumpy** (care ≤ `CARE_GRUMPY`) | no, stays an adult | passes away at `ELDER_AT_HOURS` + half of `ELDER_LIFE_HOURS` | no |
 
-A happy elder that stays healthy (health 80% or more, not ill) for
-`LEGEND_AFTER_HOURS` becomes a **legend**: golden, and it lives `ELDER_LIFE_HOURS` x1.5 more from
+A happy elder that stays well raised - healthy (health 80% or more, not ill) and cared for (care
+score at least `CARE_LEGEND`) - for `LEGEND_AFTER_HOURS` becomes a **legend**. Time below that
+care level or while unwell doesn't count, but isn't lost either. A legend is golden, and it lives `ELDER_LIFE_HOURS` x1.5 more from
 that moment. A legend's egg hatches in half the time and starts with 50 care.
 
 Passing away of old age is peaceful: Clawd is shown as a spirit with a halo instead of the

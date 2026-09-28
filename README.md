@@ -86,8 +86,8 @@ Clawd sleeps from 22:00 to 08:00 and needs about four meals a day.
 Egg → baby → child → teen → adult → elder, over about a week. How well you cared for it decides
 what kind of adult it becomes, and that decides what comes next:
 
-- **Happy** (well raised): becomes an elder with the longest old age, and if it stays healthy, a
-  golden **legend** - whose egg gets a head start.
+- **Happy** (well raised): becomes an elder with the longest old age. Keep it healthy and keep
+  caring for it well as an elder, and it becomes a golden **legend** - whose egg gets a head start.
 - **Normal:** becomes an elder with a normal old age.
 - **Grumpy** (neglected): never becomes an elder, and its life is the shortest.
 

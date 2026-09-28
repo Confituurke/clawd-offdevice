@@ -14,6 +14,7 @@
 # @config sick number "Sickness chance" default=2 min=0 max=100 unit=%
 # @config chappy number "Care for happy" default=200 min=-1000 max=1000
 # @config cgrump number "Care for grumpy" default=-100 min=-1000 max=1000
+# @config clegnd number "Care for a legend" default=400 min=-1000 max=5000 help="care a happy elder must keep to count towards legend"
 # @config sfrom number "Sleeps from" default=22 min=0 max=23 unit=h
 # @config sto number "Wakes at" default=8 min=0 max=23 unit=h
 # @config nfrom number "Night from" default=20 min=0 max=23 unit=h
@@ -21,12 +22,12 @@
 # @config notif bool "Notifications" default=false
 import math
 var m = module("clawdcore")
-var P = {"easy": [18,15,8,24,48,144,144,24,1,150,-150], "normal": [12,30,12,36,72,168,96,48,2,200,-100],
-"hard": [8,45,16,48,96,192,72,72,3,250,-50]}
+var P = {"easy": [18,15,8,24,48,144,144,24,1,150,-150,300], "normal": [12,30,12,36,72,168,96,48,2,200,-100,400],
+"hard": [8,45,16,48,96,192,72,72,3,250,-50,500]}
 var c = P.find(store.get("difficulty"))
 if c == nil
 c = []
-for k : ["hunger","egg","child","teen","adult","elder","elife","legend","sick","chappy","cgrump"] c.push(store.get(k)) end
+for k : ["hunger","egg","child","teen","adult","elder","elife","legend","sick","chappy","cgrump","clegnd"] c.push(store.get(k)) end
 end
 m.st = int(c[0] * 2520)
 m.eg = int(c[1] * 60)
@@ -34,7 +35,7 @@ m.ag = [int(c[2] * 3600), int(c[3] * 3600), int(c[4] * 3600), int(c[5] * 3600)]
 m.el = int(c[6] * 3600)
 m.lg = int(c[7] * 3600)
 m.sk = int(c[8])
-m.cz = [int(c[9]), int(c[10])]
+m.cz = [int(c[9]), int(c[10]), int(c[11])]
 m.hr = [int(store.get("sfrom")), int(store.get("sto")), int(store.get("nfrom")), int(store.get("nto"))]
 m.nf = store.get("notif")
 m.o = [2,0,0,1,10000,10000,10000,10000,10000,0,0,0,0,1,0,0,0,0,1,0,0,0,0]
@@ -99,7 +100,7 @@ t["h"] = clamp(t["h"] - int(7 * k), 0, 10000)
 t["a"] = clamp(t["a"] - int(5 * k), 0, 10000)
 t["e"] = clamp(t["e"] + int(2.5 * k), 0, 10000)
 t["c"] = clamp(t["c"] - int(2 * k), 0, 10000)
-if t["v"] == 5 && t["u"] == 0 && t["x"] >= 8000 && t["k"] == 0 t["lh"] += el end
+if t["v"] == 5 && t["u"] == 0 && t["x"] >= 8000 && t["k"] == 0 && t["z"] >= m.cz[2] t["lh"] += el end
 if t["t"] > 0
 t["t"] -= el * 3 / 10
 if t["t"] <= 0
@@ -129,7 +130,7 @@ end
 if t["o"] == 0 t["l"] = au ? 1 : 0 end
 end
 var sl = t["l"] == 1
-if t["v"] == 5 && t["u"] == 0 && t["x"] >= 8000 && t["k"] == 0 t["lh"] += 1 end
+if t["v"] == 5 && t["u"] == 0 && t["x"] >= 8000 && t["k"] == 0 && t["z"] >= m.cz[2] t["lh"] += 1 end
 if t["t"] > 0 && !sl
 t["t"] -= 1
 if t["t"] <= 0

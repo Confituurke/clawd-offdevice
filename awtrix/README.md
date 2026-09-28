@@ -34,7 +34,7 @@ hard - the same presets as in n8n, see [docs/REFERENCE.md](../docs/REFERENCE.md#
 or `custom` to use its own values: hours until hungry (12), egg hatch minutes
 (30), child/teen/adult/elder ages (12/36/72/168 h), elder lifespan (96 h),
 legend after (48 h), sickness chance (2%), care for a happy/grumpy adult
-(200/-100). Also the sleep window (22-8), night window (20-6) and
+(200/-100), care a happy elder must keep for legend (400). Also the sleep window (22-8), night window (20-6) and
 notifications (off). The clock's own time zone applies.
 
 ## How the pieces talk

@@ -703,13 +703,15 @@ test('difficulty: presets fill in the values, Normal is the default game, a set 
   assert.equal(bad.DIFFICULTY, 'normal'); assert.ok(bad.warnings.includes('DIFFICULTY'));
   assert.ok(E.makeConfig({ ADULT_AT_HOURS: 200 }).warnings.includes('GROWTH_AGES'), 'an adult older than an elder is refused');
   assert.ok(E.makeConfig({ CARE_HAPPY: -200 }).warnings.includes('CARE_LEVELS'));
+  assert.ok(E.makeConfig({ CARE_LEGEND: 100 }).warnings.includes('CARE_LEVELS'), 'a legend needs at least a happy adult\'s care');
+  for (const d of ['easy', 'normal', 'hard']) assert.ok(E.PRESETS[d].CARE_LEGEND > E.PRESETS[d].CARE_HAPPY, d);
   for (const d of ['easy', 'normal', 'hard']) assert.deepEqual(E.makeConfig({ DIFFICULTY: d }).warnings, [], `${d} is valid on its own`);
 });
 
 test('difficulty: easy is easier and hard is harder in every value', () => {
   const [e, n, h] = ['easy', 'normal', 'hard'].map((d) => E.PRESETS[d]);
   for (const k of ['HUNGER_EMPTY_HOURS', 'ELDER_LIFE_HOURS']) assert.ok(e[k] > n[k] && n[k] > h[k], k);
-  for (const k of ['EGG_HATCH_MIN', 'CHILD_AT_HOURS', 'ADULT_AT_HOURS', 'LEGEND_AFTER_HOURS', 'SICK_CHANCE_PCT', 'CARE_HAPPY', 'CARE_GRUMPY']) {
+  for (const k of ['EGG_HATCH_MIN', 'CHILD_AT_HOURS', 'ADULT_AT_HOURS', 'LEGEND_AFTER_HOURS', 'SICK_CHANCE_PCT', 'CARE_HAPPY', 'CARE_GRUMPY', 'CARE_LEGEND']) {
     assert.ok(e[k] < n[k] && n[k] < h[k], k);
   }
 });
@@ -779,16 +781,18 @@ test('elder: a grumpy (neglected) adult never becomes an elder and passes away a
   assert.equal(E.lifeEnd(agedPet({ va: 2 }), h), (192 + 36) * 3600, 'follows the difficulty');
 });
 
-test('legend: only a happy elder that stays healthy; it lives longest', () => {
+test('legend: only a happy elder that stays healthy and well cared for; it lives longest', () => {
   const cfg = E.makeConfig({ LEGEND_AFTER_HOURS: 2, SLEEP_FROM: 0, SLEEP_TO: 0 });
   const grow = (extra, hours) => {
-    const s = agedPet(Object.assign({ ev: 5, eld: 168 * 3600, age: 168 * 3600 }, extra));
+    const s = agedPet(Object.assign({ ev: 5, eld: 168 * 3600, age: 168 * 3600, cs: 450 }, extra));
     noRandom(null, () => { for (let t = T0 + 60000; t <= T0 + hours * H; t += 60000) { s.h = 10000; E.advanceTime(s, cfg, t); } });
     return s;
   };
   assert.equal(grow({ va: 0 }, 3).ev, 6, 'happy and healthy: legend');
   assert.equal(grow({ va: 1 }, 3).ev, 5, 'a normal elder never');
   assert.equal(grow({ va: 0, sk: 1 }, 3).ev, 5, 'not while sick');
+  assert.equal(grow({ va: 0, cs: 399 }, 3).ev, 5, 'not below CARE_LEGEND (400 on normal): it has to stay well raised');
+  assert.equal(grow({ va: 0, cs: 400 }, 3).ev, 6, 'exactly at CARE_LEGEND is enough');
   const lg = grow({ va: 0 }, 3);
   assert.ok(lg.lgd > 0);
   assert.equal(E.lifeEnd(lg, cfg), lg.lgd + cfg.ELDER_LIFE_HOURS * 3600 * 1.5);

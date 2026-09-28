@@ -154,6 +154,7 @@ views:
               - number.clawd_sickness_chance
               - number.clawd_care_for_a_happy_adult
               - number.clawd_care_for_a_grumpy_adult
+              - number.clawd_care_for_a_legend
               - number.clawd_sleeps_from
               - number.clawd_sleeps_until
               - number.clawd_night_scene_from

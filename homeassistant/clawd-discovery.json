@@ -452,6 +452,21 @@
       "command_template": "{\"CARE_GRUMPY\": {{ value }} }",
       "value_template": "{{ value_json.CARE_GRUMPY }}"
     },
+    "set_care_legend": {
+      "p": "number",
+      "name": "Care for a legend",
+      "unique_id": "clawd_set_care_legend",
+      "icon": "mdi:crown-outline",
+      "entity_category": "config",
+      "command_topic": "clawd/config/set",
+      "state_topic": "clawd/config",
+      "mode": "box",
+      "min": -1000,
+      "max": 5000,
+      "step": 1,
+      "command_template": "{\"CARE_LEGEND\": {{ value }} }",
+      "value_template": "{{ value_json.CARE_LEGEND }}"
+    },
     "set_sleep_from": {
       "p": "number",
       "name": "Sleeps from",

@@ -148,6 +148,13 @@ changed on the clock (Apps → Clawd → gear button).
 
 All settings, and how to change them over MQTT: [docs/REFERENCE.md](docs/REFERENCE.md).
 
+## Let an AI agent look after it
+
+Claude Code, Hermes, opencode or any agent that can run a command can take care of Clawd for you,
+playing exactly like a person would - it sees what Home Assistant shows and presses the same
+buttons, and can't change settings or values. Its goal is a long life for every pet. Setup and the
+skill: [agent/README.md](agent/README.md).
+
 ## Troubleshooting
 
 - **Nothing happens:** is the workflow published? Are the MQTT credential and `AWTRIX_HOST`

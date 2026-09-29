@@ -8,6 +8,8 @@ neglect it, you monster) bury it.
 
 ![Clawd from egg to legend](docs/clawd-stages.png)
 
+Also on the AWTRIX Hub: [Clawd Virtual Pet - Hybrid](https://awtrix.de/flow/6vqhdg62hqfB).
+
 The pet is **Blueforcer**'s original [Clawd](https://awtrix.de/flow/wg0GspJj3sl7), which runs
 entirely on the clock. On a clock without extra memory (hello, Ulanzi TC001) it often won't fit
 next to your other apps (`ERR:Clawd - out of memory`), so **Moepchi** moved its brain off the

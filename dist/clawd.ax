@@ -66,7 +66,11 @@ if i < size(self.s) self.s[i] = v else self.s.push(v) end
 i += 1
 end
 if self.rx == 0 || now_ms() - self.rx > 600000
-mqtt.publish(self.ct, "{\"a\":\"cfg\",\"sound\":" + (self.snd ? "true" : "false") + ",\"name\":\"" + string.tr(self.nm, "\"\\", "") + "\"}")
+mqtt.publish(self.ct, "{\"a\":\"cfg\",\"sound\":" + (store.get("sound") ? "true" : "false") + ",\"name\":\"" + string.tr(store.get("name"), "\"\\", "") + "\"}")
+end
+if size(l) > 26
+self.snd = l[25] == "1"
+if size(l[26]) > 0 self.nm = l[26] end
 end
 self.rx = now_ms()
 self._u()

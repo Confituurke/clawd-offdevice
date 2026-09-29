@@ -19,22 +19,24 @@ Clawd app (Apps tab, gear button):
 | Setting | Default | |
 |---|---|---|
 | Brain | `n8n` | `n8n`: the rules run in n8n's view-mode workflow. `device`: the rules run on the clock in `clawdcore` |
-| Pet name | Clawd | shown in STATS. n8n brain: kept in step with n8n's `PET_NAME`, both ways |
-| Sound | off | effect tunes on the buzzer. n8n brain: kept in step with n8n's `SOUND`, both ways |
+| Pet name | Clawd | shown in STATS. n8n brain: n8n's `PET_NAME` wins (sent in the state line); a change here is passed on to n8n |
+| Sound | off | effect tunes on the buzzer. n8n brain: n8n's `SOUND` wins (sent in the state line); a change here is passed on to n8n |
 | State topic | `clawd/state` | n8n brain: where n8n publishes the state |
 | Command topic | `clawd/cmd` | n8n brain: where button actions go (Home Assistant uses n8n's `HA_TOPIC`, `clawd/ha`, instead). Device brain: where Home Assistant sends commands |
 
 With the n8n brain the app reports its sound and name as `{"a":"cfg","sound":false,"name":"Clawd"}`
 on the command topic when the first state line arrives after it starts (saving a setting
-restarts it) and when n8n comes back after 10 minutes of silence; n8n takes a change made here
-and sends its own changes back through the app's settings.
+restarts it) and when n8n comes back after 10 minutes of silence; n8n takes a change made here.
+n8n never writes the app's settings (that would restart the app, which a clock short on memory
+may not survive): its sound and name arrive in the state line instead.
 
-`clawdcore` module (Modules card, gear button): **Difficulty** (easy, normal,
-hard - the same presets as in n8n, see [docs/REFERENCE.md](../docs/REFERENCE.md#difficulty)),
-or `custom` to use its own values: hours until hungry (12), egg hatch minutes
-(30), child/teen/adult/elder ages (12/36/72/168 h), elder lifespan (96 h),
-legend after (48 h), sickness chance (2%), care for a happy/grumpy adult
-(200/-100), care a happy elder must keep for legend (400). Also the sleep window (22-8), night window (20-6) and
+`clawdcore` module (Modules card, gear button): **Difficulty** (`icanwin`,
+`easy`, `medium`, `hard`, `nightmare` - the same presets as in n8n, see
+[docs/REFERENCE.md](../docs/REFERENCE.md#difficulty)), or `custom` to use its own values
+(defaults = Medium): hours until hungry (12), egg hatch minutes (30),
+child/teen/adult/elder ages (12/36/72/168 h), elder lifespan (96 h), legend after (48 h),
+sickness chance (2%), care for a happy/grumpy adult (200/60), care a happy elder must keep for
+legend (400). Also the sleep window (22-8), night window (20-6) and
 notifications (off). The clock's own time zone applies.
 
 ## How the pieces talk
@@ -56,6 +58,7 @@ whenever something visible changes, and at least once a minute:
 | | | | 20, 21 | egg warmth and hatch time (seconds) |
 | | | | 22 | passed away of old age (0/1); newer than the rest - an app reading 22 fields treats it as 0 |
 | | | | 23, 24 | seconds until what comes next (-1: nothing), and what: 1-6 the next stage (baby ... legend), 9 passing away of old age. For Home Assistant; the app ignores them |
+| | | | 25, 26 | n8n's sound (0/1) and pet name (letters, digits, space, `_ . -`; last field). The app uses them instead of its own settings |
 
 The app sends actions to the command topic as `{"a":"feed"}`: `feed`, `play`
 (with `"hits":0-3` after Star Catch), `clean`, `med`, `sleep`, `wake`, `warm`

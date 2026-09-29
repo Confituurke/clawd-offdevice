@@ -78,10 +78,16 @@ class Clawd
       i += 1
     end
     # First line since the app started (saving a setting restarts it), or n8n
-    # is back after a silence: tell n8n our sound and name, so a change made
-    # here reaches Home Assistant and n8n, and theirs can reach us.
+    # is back after a silence: tell n8n this app's own sound and name, so a
+    # change made in the clock's web UI reaches n8n and Home Assistant.
     if self.rx == 0 || now_ms() - self.rx > 600000
-      mqtt.publish(self.ct, "{\"a\":\"cfg\",\"sound\":" + (self.snd ? "true" : "false") + ",\"name\":\"" + string.tr(self.nm, "\"\\", "") + "\"}")
+      mqtt.publish(self.ct, "{\"a\":\"cfg\",\"sound\":" + (store.get("sound") ? "true" : "false") + ",\"name\":\"" + string.tr(store.get("name"), "\"\\", "") + "\"}")
+    end
+    # n8n's sound and name (fields 25, 26) win over this app's own; n8n never
+    # changes the app's settings, which would restart it.
+    if size(l) > 26
+      self.snd = l[25] == "1"
+      if size(l[26]) > 0 self.nm = l[26] end
     end
     self.rx = now_ms()
     self._u()

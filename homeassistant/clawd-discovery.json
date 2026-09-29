@@ -220,9 +220,11 @@
       "command_topic": "clawd/config/set",
       "state_topic": "clawd/config",
       "options": [
-        "easy",
-        "normal",
-        "hard"
+        "I Can Win",
+        "Easy",
+        "Medium",
+        "Hard",
+        "Nightmare"
       ],
       "command_template": "{\"DIFFICULTY\": {{ value | tojson }} }",
       "value_template": "{{ value_json.DIFFICULTY }}"

@@ -2,7 +2,7 @@
 # @desc    Clawd's rules, for running the pet entirely on the clock (Brain = device in the Clawd app). No n8n needed.
 # @author  Blueforcer (original Clawd), clawd-hybrid-pet
 # @version 2.1
-# @config  difficulty select "Difficulty"   default=normal options=easy,normal,hard,custom help="custom uses the values below"
+# @config  difficulty select "Difficulty"   default=medium options=icanwin,easy,medium,hard,nightmare,custom help="Quake III levels: icanwin (I Can Win) to nightmare; custom uses the values below"
 # @config  hunger number "Hours until hungry" default=12 min=1 max=240 unit=h help="custom only. Awake, full to empty. The original was about 4"
 # @config  egg    number "Egg hatches after"  default=30 min=1 max=1440 unit=min
 # @config  child  number "Child at"           default=12 min=0 max=8760 unit=h
@@ -13,7 +13,7 @@
 # @config  legend number "Legend after"       default=48 min=1 max=8760 unit=h help="healthy hours a happy elder needs"
 # @config  sick   number "Sickness chance"    default=2 min=0 max=100 unit=%
 # @config  chappy number "Care for happy"     default=200 min=-1000 max=1000
-# @config  cgrump number "Care for grumpy"    default=-100 min=-1000 max=1000
+# @config  cgrump number "Care for grumpy"    default=60 min=-1000 max=1000
 # @config  clegnd number "Care for a legend"  default=400 min=-1000 max=5000 help="care a happy elder must keep to count towards legend"
 # @config  sfrom  number "Sleeps from"        default=22 min=0 max=23 unit=h
 # @config  sto    number "Wakes at"           default=8  min=0 max=23 unit=h
@@ -28,8 +28,10 @@ import math
 var m = module("clawdcore")
 # Difficulty presets (same as n8n): hunger h, egg min, child/teen/adult/elder h,
 # elder lifespan h, legend after h, sickness %, care for happy / grumpy / legend.
-var P = {"easy": [18,15,8,24,48,144,144,24,1,150,-150,300], "normal": [12,30,12,36,72,168,96,48,2,200,-100,400],
-         "hard": [8,45,16,48,96,192,72,72,3,250,-50,500]}
+var P = {"icanwin": [24,10,6,18,36,120,192,12,0,100,-200,200], "easy": [18,15,8,24,48,144,144,24,1,150,-150,300],
+         "medium": [12,30,12,36,72,168,96,48,2,200,-100,400], "hard": [8,45,16,48,96,192,72,72,3,250,-50,500],
+         "nightmare": [6,60,20,60,120,216,48,96,5,300,0,600]}
+P["normal"] = P["medium"]                # the name before there were five levels
 var c = P.find(store.get("difficulty"))
 if c == nil
   c = []

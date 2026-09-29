@@ -28,6 +28,10 @@ Home Assistant is optional in every mode.
 
 ## Install
 
+The quick path is below. **Every other way** - installing with the n8n and clock APIs, Home
+Assistant options, upgrading without losing your pet, switching modes, running without Home
+Assistant or MQTT, and clocks short on memory - is in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
 ### 1. Prepare the clock (all modes)
 
 - Update to the latest AWTRIX NG.
@@ -69,8 +73,8 @@ from the editor don't keep the pet.
 
 When Clawd is on screen:
 
-- **Egg:** it hatches after 30 minutes; every press of **select** warms it and brings that a
-  minute closer.
+- **Egg:** it hatches after 10 to 60 minutes, depending on the difficulty (30 on Medium); every
+  press of **select** warms it and brings that a minute closer.
 - **Menu:** press **select** to open it, press again to go to the next item, and wait 2 seconds to
   do it: feed, play, clean, medicine, sleep/wake, stats. Keep the bars at the right full.
 - **Play** (view and device mode): a star bounces across the top; press **select** when it's
@@ -83,7 +87,7 @@ Clawd sleeps from 22:00 to 08:00 and needs about four meals a day.
 
 ## Growing up
 
-Egg → baby → child → teen → adult → elder, over about a week. How well you cared for it decides
+Egg → baby → child → teen → adult → elder, over about a week on Medium. How well you cared for it decides
 what kind of adult it becomes, and that decides what comes next:
 
 - **Happy** (well raised): becomes an elder with the longest old age. Keep it healthy and keep
@@ -94,7 +98,8 @@ what kind of adult it becomes, and that decides what comes next:
 When its time comes Clawd passes away peacefully (a little spirit with a halo), and you start again
 with a new egg.
 
-Too easy or too hard? Pick a **difficulty**: easy, normal or hard (see Settings below).
+Too easy or too hard? Pick one of five **difficulty** levels, from *I Can Win* to *Nightmare*
+(see Settings below).
 
 ## Home Assistant (optional, view and push mode)
 
@@ -125,11 +130,16 @@ page:
 - **Advanced Settings:** everything the difficulty sets (hunger speed, growing-up ages, old age,
   legend, sickness, what counts as a happy or grumpy adult), sleep and night hours, time zone.
 
-| Difficulty | Hungry after | Grows up to adult | Ill when neglected | Old age |
-|---|---|---|---|---|
-| Easy | 18 h | 2 days | rarely | long |
-| **Normal** | 12 h | 3 days | sometimes | medium |
-| Hard | 8 h | 4 days | often | short |
+| Difficulty | Hungry after | Grows up to adult | Ill when neglected | Old age | Needs you |
+|---|---|---|---|---|---|
+| I Can Win | 24 h | 1½ days | never | very long | a few times a day |
+| Easy | 18 h | 2 days | rarely | long | now and then |
+| **Medium** | 12 h | 3 days | sometimes | medium | every few hours |
+| Hard | 8 h | 4 days | often | short | every 2 hours |
+| Nightmare | 6 h | 5 days | very often | very short | every 1-2 hours, and before bed |
+
+On every level a caring player can raise a legend; the numbers are checked by simulating whole
+lives (see [docs/REFERENCE.md](docs/REFERENCE.md#difficulty)).
 
 The time zone is n8n's own unless you set one. In view mode, Clawd's name and sound can also be
 changed on the clock (Apps → Clawd → gear button).
@@ -141,15 +151,19 @@ All settings, and how to change them over MQTT: [docs/REFERENCE.md](docs/REFEREN
 - **Nothing happens:** is the workflow published? Are the MQTT credential and `AWTRIX_HOST`
   right? In n8n, the workflow's **Executions** show errors.
 - **Buttons don't work (push mode):** `MQTT_PREFIX` must match the clock's MQTT prefix.
-- **"out of memory" when saving the script:** restart the clock and save it again right away. If
-  it still fails, use push mode.
+- **"out of memory" or "heap too fragmented" when saving the script:** restart the clock, save it
+  the moment the web UI answers, then restart once more
+  ([details](docs/INSTALL.md#12-clocks-short-on-memory)). If it still fails, use push mode.
 - **`OFF` on the clock (view mode) or a red frame (push mode):** n8n hasn't sent anything for a
   while. Check that n8n is running and the workflow is published.
 
 ## More
 
-- [docs/REFERENCE.md](docs/REFERENCE.md): every setting, live settings over MQTT, other Home
-  Assistant options, the screen mirror, how it works, what differs from the original, development.
+- [docs/INSTALL.md](docs/INSTALL.md): every mode and every way to install and run it, upgrading,
+  switching modes, clocks short on memory.
+- [docs/REFERENCE.md](docs/REFERENCE.md): every setting, the difficulty levels and how they were
+  balanced, life stages, live settings over MQTT, how it works, what differs from the original,
+  development.
 - [awtrix/README.md](awtrix/README.md): the clock app, its settings and memory use.
 
 ## Credits

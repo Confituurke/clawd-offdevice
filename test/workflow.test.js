@@ -206,15 +206,14 @@ test('settings: both workflows take changes on CONFIG_SET_TOPIC and the webhook,
   assert.deepEqual(ev, [{ event: 'cmd', payload: '{"SOUND":true}', topic: 'clawd/config/set' }]);
 });
 
-test('view workflow: sends the clock app its settings in the background', () => {
-  const wf = load(FILES[1]);
-  const sub = subOf(wf);
-  const n = sub.nodes.find((x) => x.name === 'Send Device Settings');
-  assert.equal(n.parameters.method, 'PATCH');
-  assert.equal(n.parameters.url, '={{ $json.base }}/api/v1/apps/{{ $json.app }}/config');
-  assert.equal(n.parameters.jsonBody, '={{ JSON.stringify($json.devicePatch) }}');
-  assert.match(wf.nodes.find((x) => x.name === 'Anything To Send').parameters.conditions.conditions[0].leftValue, /devicePatch/);
-  assert.equal(subOf(load(FILES[0])).nodes.find((x) => x.name === 'Send Device Settings'), undefined, 'push mode has no clock app');
+test('view workflow: never changes the clock app\'s settings (that restarts it)', () => {
+  for (const f of FILES) {
+    const wf = load(f);
+    for (const n of allNodes(wf).filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+      assert.doesNotMatch(n.parameters.url, /\/config/, `${f}: ${n.name}`);
+      assert.notEqual(n.parameters.method, 'PATCH', `${f}: ${n.name}`);
+    }
+  }
 });
 
 test('view mirror workflow: follows MIRROR from the settings topic', () => {
@@ -249,16 +248,16 @@ test('Home Assistant settings entities: one per live setting, and every command 
 
   // What Home Assistant would send (numbers as HA formats them, text through tojson),
   // and what the state template would read back.
-  const samples = { DIFFICULTY: 'hard', PET_NAME: 'Mr "Pinch"', TZ: 'Europe/Paris', HUNGER_EMPTY_HOURS: 9.5, EGG_HATCH_MIN: 20, CHILD_AT_HOURS: 10,
+  const samples = { DIFFICULTY: 'Hard', PET_NAME: 'Mr "Pinch"', TZ: 'Europe/Paris', HUNGER_EMPTY_HOURS: 9.5, EGG_HATCH_MIN: 20, CHILD_AT_HOURS: 10,
     TEEN_AT_HOURS: 30, ADULT_AT_HOURS: 60, ELDER_AT_HOURS: 200, ELDER_LIFE_HOURS: 50, LEGEND_AFTER_HOURS: 30, SICK_CHANCE_PCT: 5,
     CARE_HAPPY: 300, CARE_GRUMPY: -200, CARE_LEGEND: 400, SLEEP_FROM: 23, SLEEP_TO: 7, NIGHT_FROM: 21, NIGHT_TO: 5 };
-  assert.deepEqual(byKey.DIFFICULTY.options, ['easy', 'normal', 'hard']);
+  assert.deepEqual(byKey.DIFFICULTY.options, ['I Can Win', 'Easy', 'Medium', 'Hard', 'Nightmare']);
   // Home Assistant only accepts multiples of `step` above `min`: every whole number (and every preset
   // value, and one off it) must be enterable, so nobody gets "enter a valid value" for e.g. 149.
   for (const c of Object.values(cmps).filter((x) => x.p === 'number')) {
     const k = /"([A-Z_]+)"/.exec(c.command_template)[1];
     assert.ok(c.step <= 1, `${k}: step ${c.step}`);
-    for (const d of ['easy', 'normal', 'hard']) {
+    for (const d of Object.keys(E.PRESETS)) {
       const v = E.PRESETS[d][k];
       if (v === undefined) continue;
       for (const x of [v, v - 1, v + 1].filter((n) => n >= c.min && n <= c.max)) {

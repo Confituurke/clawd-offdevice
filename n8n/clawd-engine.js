@@ -28,7 +28,7 @@ const DEFAULTS = {
   APP_NAME: 'clawd',          // pushed app name (push) / script name (view)
   PET_NAME: 'Clawd',
   TZ: '',                     // any IANA time zone; empty: n8n's own time zone
-  DIFFICULTY: 'normal',       // easy | normal | hard: fills in the values below (see PRESETS)
+  DIFFICULTY: 'Medium',       // I Can Win | Easy | Medium | Hard | Nightmare: fills in the values below (see PRESETS)
   HUNGER_EMPTY_HOURS: 12,     // awake, full -> empty. The original was ~4 h: an unfed night could starve it.
   EGG_HATCH_MIN: 30,
   CHILD_AT_HOURS: 12,
@@ -58,17 +58,32 @@ const DEFAULTS = {
   MIRROR_TOPIC: 'clawd/screen'
 };
 
-// Difficulty presets. Normal is the default game; the Settings node and live
-// changes can still set any single value on top of a preset.
+// Difficulty presets, the five skill levels of Quake III Arena. Medium is the
+// default game (the original's rules at a friendlier speed); the Settings node
+// and live changes can still set any single value on top of a preset.
+// The care levels are set from whole-life simulations (test/balance.test.js):
+// care builds up faster on faster levels (more meals, more cleaning), so each
+// level's thresholds follow its own pace. On every level a caring player (in
+// every 2 h) raises a happy adult and a legend; the least careful players who
+// still keep the pet alive raise a grumpy one; a legend's time always fits in a
+// happy elder's life.
+const P = (h, egg, c, t, a, e, life, leg, sick, happy, grumpy, legend) => ({
+  HUNGER_EMPTY_HOURS: h, EGG_HATCH_MIN: egg, CHILD_AT_HOURS: c, TEEN_AT_HOURS: t, ADULT_AT_HOURS: a, ELDER_AT_HOURS: e,
+  ELDER_LIFE_HOURS: life, LEGEND_AFTER_HOURS: leg, SICK_CHANCE_PCT: sick, CARE_HAPPY: happy, CARE_GRUMPY: grumpy, CARE_LEGEND: legend });
 const PRESETS = {
-  easy:   { HUNGER_EMPTY_HOURS: 18, EGG_HATCH_MIN: 15, CHILD_AT_HOURS: 8, TEEN_AT_HOURS: 24, ADULT_AT_HOURS: 48, ELDER_AT_HOURS: 144,
-    ELDER_LIFE_HOURS: 144, LEGEND_AFTER_HOURS: 24, SICK_CHANCE_PCT: 1, CARE_HAPPY: 150, CARE_GRUMPY: -150, CARE_LEGEND: 300 },
-  normal: { HUNGER_EMPTY_HOURS: 12, EGG_HATCH_MIN: 30, CHILD_AT_HOURS: 12, TEEN_AT_HOURS: 36, ADULT_AT_HOURS: 72, ELDER_AT_HOURS: 168,
-    ELDER_LIFE_HOURS: 96, LEGEND_AFTER_HOURS: 48, SICK_CHANCE_PCT: 2, CARE_HAPPY: 200, CARE_GRUMPY: -100, CARE_LEGEND: 400 },
-  hard:   { HUNGER_EMPTY_HOURS: 8, EGG_HATCH_MIN: 45, CHILD_AT_HOURS: 16, TEEN_AT_HOURS: 48, ADULT_AT_HOURS: 96, ELDER_AT_HOURS: 192,
-    ELDER_LIFE_HOURS: 72, LEGEND_AFTER_HOURS: 72, SICK_CHANCE_PCT: 3, CARE_HAPPY: 250, CARE_GRUMPY: -50, CARE_LEGEND: 500 }
+  //                  hungry egg child teen adult elder lifespan legend sick  care: happy grumpy legend
+  'I Can Win': P(24,  10,  6, 18,  36, 120, 192, 12, 0,   60,  30,  180),
+  'Easy':      P(18,  15,  8, 24,  48, 144, 144, 24, 1,  100,  40,  300),
+  'Medium':    P(12,  30, 12, 36,  72, 168,  96, 48, 2,  200,  60,  400),
+  'Hard':      P( 8,  45, 16, 48,  96, 192,  72, 60, 3,  330, 240,  550),
+  'Nightmare': P( 6,  60, 20, 60, 120, 216,  56, 66, 5,  720, 660, 1000)
 };
-const PRESET_KEYS = Object.keys(PRESETS.normal);
+// A difficulty as typed anywhere ("medium", "I CAN WIN", the old "normal") -> its name, or null.
+function presetName(v) {
+  const k = String(v === undefined || v === null ? '' : v).toLowerCase().replace(/[^a-z]/g, '');
+  return { icanwin: 'I Can Win', easy: 'Easy', medium: 'Medium', normal: 'Medium', hard: 'Hard', nightmare: 'Nightmare' }[k] || null;
+}
+const PRESET_KEYS = Object.keys(PRESETS.Medium);
 
 // ---- palette and sprites (same as the original) -----------------------------
 const CM = {
@@ -231,8 +246,8 @@ function makeConfig(raw) {
   if (cfg.HA_TOPIC === cfg.CMD_TOPIC) { warnings.push('HA_TOPIC'); cfg.HA_TOPIC = DEFAULTS.HA_TOPIC === cfg.CMD_TOPIC ? '' : DEFAULTS.HA_TOPIC; }
 
   // The preset fills in its values first; any value set below wins over it.
-  const dif = String(pick('DIFFICULTY') || DEFAULTS.DIFFICULTY).trim().toLowerCase();
-  if (PRESETS[dif]) cfg.DIFFICULTY = dif; else warnings.push('DIFFICULTY');
+  const dif = presetName(pick('DIFFICULTY') || DEFAULTS.DIFFICULTY);
+  if (dif) cfg.DIFFICULTY = dif; else warnings.push('DIFFICULTY');
   Object.assign(cfg, PRESETS[cfg.DIFFICULTY]);
 
   const mode = String(pick('MODE') || DEFAULTS.MODE).toLowerCase();
@@ -766,7 +781,9 @@ function stateLine(s, cfg, nowMs) {
     Math.floor(s.warm),
     Math.floor(cfg.EGG_HATCH_MIN * 60),
     s.old ? 1 : 0,                       // 22: passed away of old age (added later; older apps read 0-21)
-    nx[0], nx[1]                         // 23, 24: seconds until what comes next, and what (see nextStep)
+    nx[0], nx[1],                        // 23, 24: seconds until what comes next, and what (see nextStep)
+    cfg.SOUND ? 1 : 0,                   // 25: sound on (the view app follows this instead of its own setting)
+    String(cfg.PET_NAME).replace(/[^A-Za-z0-9 _.\-]/g, '').slice(0, 12)   // 26: the pet's name (last: free text, no commas)
   ].join(',');
 }
 
@@ -824,8 +841,8 @@ function applySettings(payload, store, raw) {
   // Choosing a difficulty applies it: stored changes to its values go, the
   // Settings node's values stay (leave those empty to follow the difficulty).
   if (o.DIFFICULTY !== undefined && o.DIFFICULTY !== null) {
-    const d = String(o.DIFFICULTY).trim().toLowerCase();
-    if (PRESETS[d]) { for (const k of PRESET_KEYS) delete store.cfg[k]; store.cfg.DIFFICULTY = d; res.accepted.push('DIFFICULTY'); }
+    const d = presetName(o.DIFFICULTY);
+    if (d) { for (const k of PRESET_KEYS) delete store.cfg[k]; store.cfg.DIFFICULTY = d; res.accepted.push('DIFFICULTY'); }
     else res.rejected.push('DIFFICULTY');
   }
   const want = {};
@@ -855,37 +872,24 @@ function settingsMessage(cfg) {
   return JSON.stringify(o);
 }
 
-// View mode: the clock app keeps its own copy of two settings, sound and the
-// pet's name. It reports them ({"a":"cfg",...} on CMD_TOPIC) when it starts -
-// saving a setting on the clock restarts it - and when n8n comes back after a
-// silence. dev.devSync is what the clock last reported matching. A value that
-// differs from ours while ours still equals dev.devSync was changed on the
-// clock, so we take it; otherwise ours changed since, so the clock gets ours.
+// View mode: the clock app has two settings of its own, sound and the pet's
+// name. n8n never changes them - saving an app's settings makes AWTRIX restart
+// and recompile it, which a clock short on memory may not survive. Instead the
+// state line carries n8n's sound and name (fields 25 and 26) and the app follows
+// those. The app reports its own values ({"a":"cfg",...} on CMD_TOPIC) when it
+// starts and when n8n comes back after a silence; a value that differs from
+// what it reported last time was changed in the clock's web UI, and is taken.
 const DEVICE_KEYS = [['sound', 'SOUND'], ['name', 'PET_NAME']];
-function deviceSync(rep, store, dev, raw, cfg) {
-  const synced = dev.devSync || {};
+function deviceSync(rep, store, dev, raw) {
+  const last = dev.devSync || {};
   const adopt = {};
   for (const [dk, ck] of DEVICE_KEYS) {
     if (rep[dk] === undefined) continue;
-    if (rep[dk] === cfg[ck]) synced[dk] = rep[dk];
-    else if (synced[dk] !== undefined && synced[dk] === cfg[ck]) adopt[ck] = rep[dk];
+    if (last[dk] !== undefined && rep[dk] !== last[dk]) adopt[ck] = rep[dk];
+    last[dk] = rep[dk];
   }
-  if (Object.keys(adopt).length) {
-    const r = applySettings(adopt, store, raw);
-    const now = effectiveConfig(raw, store);
-    for (const [dk, ck] of DEVICE_KEYS) if (r.accepted.includes(ck)) synced[dk] = now[ck];
-  }
-  dev.devSync = synced;
-}
-// What the clock still needs from us, or null. Nothing until the clock has
-// reported once: an older app that never reports would otherwise be sent (and
-// restarted by) the same settings every 10 minutes.
-function devicePatch(dev, cfg) {
-  if (!dev.devSync) return null;
-  const synced = dev.devSync;
-  const p = {};
-  for (const [dk, ck] of DEVICE_KEYS) if (synced[dk] !== cfg[ck]) p[dk] = cfg[ck];
-  return Object.keys(p).length ? p : null;
+  if (Object.keys(adopt).length) applySettings(adopt, store, raw);
+  dev.devSync = last;
 }
 function parseDeviceReport(raw) {
   let o = raw;
@@ -924,7 +928,7 @@ function run(input, store, rawCfg, nowMs) {
   if (report) {
     ev = 'device';
     if (base.MODE !== 'view') return Object.assign(emptyOut(base), { ignore: true });
-    deviceSync(report, store, dev, rawCfg, effectiveConfig(rawCfg, store));
+    deviceSync(report, store, dev, rawCfg);
   }
   const cfg = effectiveConfig(rawCfg, store);
 
@@ -1029,18 +1033,6 @@ function run(input, store, rawCfg, nowMs) {
       dev.cfgMsg = msg; dev.cfgPub = nowMs;
     }
   }
-  // View mode: send the clock app our sound and name when they differ from what
-  // it last reported - at once after a change, then every 10 min until the
-  // clock confirms (a save restarts the app, which reports again).
-  if (cfg.MODE === 'view') {
-    const p = devicePatch(dev, cfg);
-    const key = p ? JSON.stringify(p) : '';
-    if (p && (key !== dev.patchKey || nowMs - (dev.patchAt || 0) >= 600000)) {
-      out.devicePatch = p; dev.patchKey = key; dev.patchAt = nowMs;
-    }
-    if (!p) dev.patchKey = '';
-  }
-
   // Should this run's state be saved? Every event and every visible change
   // is; a plain tick that only moved the clock forward is not, at most once a
   // minute. See runN8n() for why that matters.
@@ -1052,7 +1044,7 @@ function run(input, store, rawCfg, nowMs) {
 function emptyOut(cfg) {
   return {
     mode: cfg.MODE, ignore: false, push: false, payload: null, frames: [],
-    sound: null, notify: null, switchTo: false, publish: null, mirror: null, config: null, devicePatch: null,
+    sound: null, notify: null, switchTo: false, publish: null, mirror: null, config: null,
     base: `http://${cfg.AWTRIX_HOST}`, app: cfg.APP_NAME, warnings: cfg.warnings
   };
 }
@@ -1062,7 +1054,7 @@ function significant(s, dev) {
   const o = Object.assign({}, s);
   delete o.last_ts; delete o.decAcc; delete o.age; delete o.pt; delete o.saved;
   return JSON.stringify(o) + '|' + dev.fg + '|' + dev.sig + '|' + dev.pubSig + '|' +
-    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub + '|' + dev.cfgPub + '|' + dev.patchKey + '|' + dev.patchAt;
+    (dev.fg === false ? dev.lastPush : 0) + '|' + dev.lastPub + '|' + dev.cfgPub;
 }
 
 // The n8n entry point. n8n loads the workflow's static data when a run starts
@@ -1085,9 +1077,9 @@ function runN8n(input, staticData, rawCfg, nowMs) {
 
 const ClawdEngine = {
   ENGINE_VERSION, DEFAULTS, ACTIONS, FX_MS, SND, STATS_HOLD_MS, STATS_AFTER_MS, statsScrollMs,
-  PRESETS, PRESET_KEYS, lifeEnd, nextStep, makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
+  PRESETS, PRESET_KEYS, presetName, lifeEnd, nextStep, makeConfig, hourIn, inWindow, freshState, upgradeState, applyCatchup, decayStep, advanceTime,
   checkEvolution, action, onButton, checkDwell, render, signature, animatedUntil,
   stateLine, parseCmd, checkNotify, statsText, significant, run, runN8n,
-  LIVE_SETTINGS, LIVE_KEYS, NUM_RANGES, effectiveConfig, applySettings, settingsMessage, deviceSync, devicePatch, parseDeviceReport
+  LIVE_SETTINGS, LIVE_KEYS, NUM_RANGES, effectiveConfig, applySettings, settingsMessage, deviceSync, parseDeviceReport
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = ClawdEngine;

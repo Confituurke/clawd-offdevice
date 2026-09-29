@@ -26,8 +26,8 @@ listed under `warnings` in the engine's output.
 | `APP_NAME` | `clawd` | pushed app name (push), or the name of the script on the clock (view) |
 | `PET_NAME` | `Clawd` | up to 12 characters |
 | `TZ` | *(empty)* | time zone for sleep and night, e.g. `America/New_York`; empty uses n8n's own time zone |
-| `DIFFICULTY` | `normal` | `easy`, `normal` or `hard`: fills in the values below ([Difficulty](#difficulty)) |
-| `HUNGER_EMPTY_HOURS` | *(difficulty)* | awake, full to empty. Normal 12 h; the original is ~4 h (`3.97`), which starves an unfed pet overnight |
+| `DIFFICULTY` | `Medium` | `I Can Win`, `Easy`, `Medium`, `Hard` or `Nightmare` (case and spaces don't matter; the old `normal` means Medium): fills in the values below ([Difficulty](#difficulty)) |
+| `HUNGER_EMPTY_HOURS` | *(difficulty)* | awake, full to empty. Medium 12 h; the original is ~4 h (`3.97`), which starves an unfed pet overnight |
 | `EGG_HATCH_MIN` | *(difficulty)* | |
 | `CHILD_AT_HOURS` / `TEEN_AT_HOURS` / `ADULT_AT_HOURS` / `ELDER_AT_HOURS` | *(difficulty)* | ages at which Clawd grows up |
 | `ELDER_LIFE_HOURS` | *(difficulty)* | how long an elder lives, x1.5 if raised happy; a grumpy adult never becomes an elder and passes away at elder age + half of this |
@@ -62,20 +62,40 @@ mode) has the pet's rules as its settings.
 
 ## Difficulty
 
-| | Easy | Normal | Hard |
-|---|---|---|---|
-| Hungry after (`HUNGER_EMPTY_HOURS`) | 18 h | 12 h | 8 h |
-| Egg hatches after | 15 min | 30 min | 45 min |
-| Child / teen / adult / elder at | 8 / 24 / 48 / 144 h | 12 / 36 / 72 / 168 h | 16 / 48 / 96 / 192 h |
-| Elder lifespan (x1.5 happy; a grumpy adult: half, as an adult) | 144 h | 96 h | 72 h |
-| Legend after (healthy hours as a happy elder) | 24 h | 48 h | 72 h |
-| Sickness chance while neglected | 1% | 2% | 3% |
-| Care for a happy / grumpy adult | 150 / -150 | 200 / -100 | 250 / -50 |
-| Care a happy elder must keep for legend | 300 | 400 | 500 |
+Five levels, named after Quake III Arena's skill levels:
 
-Normal is the original game's rules at a friendlier speed. Easy is forgiving: slower hunger, faster
-growing up, rarely ill, and an easier path to a happy adult and a long old age. Hard is the
-opposite; a pet that goes to bed at 60% hunger wakes up hungry (but alive).
+| | I Can Win | Easy | **Medium** | Hard | Nightmare |
+|---|---|---|---|---|---|
+| Hungry after (`HUNGER_EMPTY_HOURS`) | 24 h | 18 h | 12 h | 8 h | 6 h |
+| Egg hatches after | 10 min | 15 min | 30 min | 45 min | 60 min |
+| Child / teen / adult at | 6 / 18 / 36 h | 8 / 24 / 48 h | 12 / 36 / 72 h | 16 / 48 / 96 h | 20 / 60 / 120 h |
+| Elder at | 120 h | 144 h | 168 h | 192 h | 216 h |
+| Elder lifespan (x1.5 for a happy elder) | 192 h | 144 h | 96 h | 72 h | 56 h |
+| Legend after (well-raised hours as a happy elder) | 12 h | 24 h | 48 h | 60 h | 66 h |
+| Sickness chance while neglected | 0% | 1% | 2% | 3% | 5% |
+| Care for a happy / grumpy adult | 60 / 30 | 100 / 40 | 200 / 60 | 330 / 240 | 720 / 660 |
+| Care a happy elder must keep for legend | 180 | 300 | 400 | 550 | 1000 |
+
+- **I Can Win:** never ill, slow hunger, even a player who checks in a few times a day raises it.
+- **Easy:** forgiving; a casual player keeps it well.
+- **Medium:** the original game's rules at a friendlier speed - the default.
+- **Hard:** a pet that goes to bed at 60% hunger wakes up hungry; casual care gives a grumpy adult.
+- **Nightmare:** an unfed night costs health, illness comes often, and a legend has to be earned in
+  66 of a happy elder's 84 hours.
+
+**How the numbers were chosen.** Care builds up faster on faster levels (more meals, more
+cleaning), so each level's care thresholds follow its own pace. They come from whole lives played
+with the real engine by simulated players who only use the normal actions
+([`test/balance.test.js`](../test/balance.test.js)). On every level:
+
+- a **caring** player (checks in every 2 h, feeds below 70%, cleans, gives medicine, plays, lets a
+  tired pet nap, checks once more before bed) raises a happy adult, then a legend, which lives to a
+  peaceful old age;
+- a **normal** and a **grumpy** adult are both reachable by players who still keep the pet alive;
+- a legend's hours always fit in a happy elder's life, with less room on each harder level.
+
+Rougher players: at I Can Win a player who checks in every 6 h still gets an old pet (grumpy); from
+Medium up, a pet that isn't played with gets unhappy, falls ill and dies young.
 
 Values combine in this order, later wins: the difficulty → a value filled in in the Settings node →
 a value changed while running. Choosing a difficulty while running (Home Assistant or
@@ -121,10 +141,11 @@ shows up everywhere:
   change and as the answer to every settings message, so a Home Assistant control snaps back when
   a value was refused. Changes are kept in the workflow and win over the Settings node until
   cleared.
-- **The clock (view mode):** Clawd's own *Sound* and *Pet name* follow along both ways. n8n sends
-  a change to the app, and the app tells n8n its values when it starts and when n8n comes back
-  after a silence, so a change made in the clock's web UI reaches n8n and Home Assistant too.
-  Saving a setting restarts the app for a moment; the pet does not notice.
+- **The clock (view mode):** the Clawd app follows n8n's *Sound* and *Pet name*, which n8n sends
+  in the state line (fields 25 and 26). n8n never changes the app's own settings: saving an app's
+  settings makes AWTRIX restart and recompile it, which a clock short on memory may not survive.
+  The other way round works: the app reports its own sound and name when it starts and when n8n
+  comes back after a silence, and a value changed in the clock's web UI is taken.
 - **Not live, on purpose:** topics, `AWTRIX_HOST`, `MQTT_PREFIX`, `APP_NAME` and the push-mode
   tuning stay in the Settings node: a wrong topic or address set over MQTT would cut n8n off from
   the topic you'd fix it with. The clock's app time and mute are the clock's own settings.

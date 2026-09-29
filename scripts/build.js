@@ -228,7 +228,7 @@ function settings(mode, pos) {
   rows.push(['HA_TOPIC', d.HA_TOPIC, 'string'], ['CONFIG_TOPIC', d.CONFIG_TOPIC, 'string'], ['CONFIG_SET_TOPIC', d.CONFIG_SET_TOPIC, 'string']);
   return {
     id: id('set'), name: 'Settings', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos,
-    notes: 'All of Clawd\'s settings live here. DIFFICULTY is easy, normal or hard; the empty values below it follow the difficulty, fill one in to override it. See docs/REFERENCE.md, "Settings".',
+    notes: 'All of Clawd\'s settings live here. DIFFICULTY is I Can Win, Easy, Medium, Hard or Nightmare; the empty values below it follow the difficulty, fill one in to override it. See docs/REFERENCE.md, "Settings".',
     parameters: {
       assignments: { assignments: rows.map(([k, v, type]) => ({ id: id('opt'), name: `cfg.${k}`, value: v, type })) },
       includeOtherFields: true,
@@ -276,7 +276,6 @@ function awtrixSubWorkflow(parts) {
   add('Has SwitchTo', '$json.switchTo === true', http('Switch To Clawd', 'PUT', '={{ $json.base }}/api/v1/apps/active', '={{ JSON.stringify({ name: $json.app, fast: true }) }}'));
   if (parts.includes('sound')) add('Has Sound', '!!$json.sound', http('Play Sound', 'POST', '={{ $json.base }}/api/v1/audio/play', '={{ JSON.stringify({ rtttl: $json.sound }) }}'));
   add('Has Notify', '!!$json.notify', http('Send Notify', 'POST', '={{ $json.base }}/api/v1/notifications', '={{ JSON.stringify($json.notify) }}'));
-  if (parts.includes('deviceConfig')) add('Has Device Settings', '!!$json.devicePatch', http('Send Device Settings', 'PATCH', '={{ $json.base }}/api/v1/apps/{{ $json.app }}/config', '={{ JSON.stringify($json.devicePatch) }}'));
   if (parts.includes('burst')) {
     nodes.push(ifNode('Has Burst', '($json.frames || []).length > 0', [220, y]));
     nodes.push(code('Split Frames', SPLIT_FRAMES, [440, y]));
@@ -381,8 +380,8 @@ function viewWorkflow() {
     publishState([500, 100]),
     ifNode('Has Settings', '!!$json.config', [280, -100]),
     publishConfig([500, -100]),
-    ifNode('Anything To Send', '$json.switchTo || !!$json.notify || !!$json.devicePatch', [280, 300]),
-    background('Send To AWTRIX', awtrixSubWorkflow(['deviceConfig']), [500, 300])
+    ifNode('Anything To Send', '$json.switchTo || !!$json.notify', [280, 300]),
+    background('Send To AWTRIX', awtrixSubWorkflow([]), [500, 300])
   ]);
   const c = {};
   link(c, 'Tick every 15s', 'Tick Event');

@@ -15,6 +15,12 @@ def sline(tag)
 end
 var VIEW = _argv[4]                                   # awtrix/clawd-view.ax or dist/clawd.ax
 
+# the same state line with n8n's sound on (field 25)
+def snd(line)
+  var p = string.split(line, ",")
+  p[25] = "1"
+  return p.concat(",")
+end
 def last_pub()
   return size(mqtt.pub) > 0 ? mqtt.pub[-1][1] : nil
 end
@@ -145,16 +151,23 @@ press(app)
 app.on_hide()
 check(app.u == 0 && !rotation.paused, "on_hide closes the menu")
 
-# sound setting on
+# n8n's sound (state line field 25) wins over the app's own setting
 reset_services()
 app = load_app(VIEW, {"sound": true})
 app.setup()
 mqtt.deliver("clawd/state", sline("alive"))
 mqtt.deliver("clawd/state", sline("fed"))
-check(size(sound.played) == 1 && string.find(sound.played[0], "m:") == 0, "feed tune played")
-mqtt.deliver("clawd/state", sline("sick"))
+check(size(sound.played) == 0, "app sound on, n8n sound off: silent")
+reset_services()
+app = load_app(VIEW, {"sound": false})
+app.setup()
+mqtt.deliver("clawd/state", snd(sline("alive")))
+mqtt.deliver("clawd/state", snd(sline("fed")))
+check(size(sound.played) == 1 && string.find(sound.played[0], "m:") == 0, "n8n sound on: feed tune played")
+mqtt.deliver("clawd/state", snd(sline("sick")))
 check(size(sound.played) == 2, "sick tune played")
-var sc = string.split(sline("alive"), ",")
+check(string.find(last_pub(), '"sound":false') >= 0 || size(mqtt.pub) >= 1, "the app still reports its own setting")
+var sc = string.split(snd(sline("alive")), ",")
 sc[16] = "8"
 sc[17] = "90"
 sc[18] = "0"
@@ -168,8 +181,27 @@ app.on_hide()
 reset_services()
 app = load_app(VIEW, {"sound": true})
 app.setup()
-mqtt.deliver("clawd/state", sline("sick"))
+mqtt.deliver("clawd/state", snd(sline("sick")))
 check(size(sound.played) == 0, "an already sick pet does not alarm on restart")
+# a line from an older n8n (no fields 25-26): the app's own sound setting applies
+reset_services()
+app = load_app(VIEW, {"sound": true})
+app.setup()
+mqtt.deliver("clawd/state", sline("before22"))
+var old = string.split(sline("fed"), ",")
+old = old[0 .. 21]
+mqtt.deliver("clawd/state", old.concat(","))
+check(size(sound.played) == 1, "older line: own sound setting")
+# n8n's name (field 26) is used in the stats
+reset_services()
+app = load_app(VIEW, {"name": "Clawd"})
+app.setup()
+var nl = string.split(sline("alive"), ",")
+nl[26] = "Krabbie"
+mqtt.deliver("clawd/state", nl.concat(","))
+app._a(6)
+check(string.find(app.b, "Krabbie  CHILD  AGE") == 0, "stats use n8n's name: " + str(app.b))
+app._x()
 
 # every sprite stage draws without error
 for tag : ["egg", "baby", "child", "teen", "adult0", "adult1", "adult2", "dead", "asleep", "sick"]

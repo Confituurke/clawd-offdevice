@@ -477,7 +477,7 @@ test('view: device commands apply, including a Star Catch result', () => {
   assert.equal(r.switchTo, false);
   assert.equal(r.publish.topic, 'clawd/state');
   assert.equal(r.publish.retain, true);
-  assert.equal(r.publish.message.split(',').length, 25);
+  assert.equal(r.publish.message.split(',').length, 27);
   assert.equal(r.publish.message.split(',')[22], '0', 'field 22: not passed away of old age');
   assert.equal(E.run({ event: 'cmd', payload: '{"a":"rm -rf"}' }, store, cfg, T0 + 2000).ignore, true);
   assert.equal(E.run({ event: 'cmd', payload: 'not json {' }, store, cfg, T0 + 2000).ignore, true);
@@ -638,30 +638,27 @@ test('settings: the webhook and a live MIRROR switch work too', () => {
   assert.equal(f.mirror, 'clawd/screen', 'push mode mirrors once MIRROR is switched on live');
 });
 
-test('view: the clock app\'s sound and name follow the settings, and a change made on the clock is taken', () => {
+test('view: n8n never changes the clock app\'s settings; the state line carries sound and name, and a change made on the clock is taken', () => {
   const cfg = { MODE: 'view' };
   const rep = (sound, name) => ({ event: 'cmd', topic: 'clawd/cmd', payload: JSON.stringify({ a: 'cfg', sound, name }) });
+  const line = (r) => r.publish.message.split(',');
   const store = {};
   let r = E.run({ event: 'tick' }, store, cfg, T0);
-  assert.equal(r.devicePatch, null, 'nothing is sent before the clock has reported (an older app never does)');
+  assert.deepEqual([line(r)[25], line(r)[26]], ['0', 'Clawd'], 'fields 25 and 26: sound and name');
+  assert.equal(r.devicePatch, undefined, 'nothing is ever sent to the app');
 
   r = E.run(rep(true, 'Clawd'), store, cfg, T0 + 1000);
-  assert.deepEqual(r.devicePatch, { sound: false }, 'first report: our values win');
-  assert.equal(r.ignore, false);
-  assert.equal(E.run({ event: 'tick' }, store, cfg, T0 + 2000).devicePatch, null, 'sent once, not on every tick');
-  assert.deepEqual(E.run({ event: 'tick' }, store, cfg, T0 + 1000 + 600000).devicePatch, { sound: false }, 'resent after 10 min until confirmed');
-  r = E.run(rep(false, 'Clawd'), store, cfg, T0 + 700000);
-  assert.equal(r.devicePatch, null, 'confirmed');
+  assert.equal(E.effectiveConfig(cfg, store).SOUND, false, 'first report: only noted, n8n keeps its value');
+  r = E.run(rep(true, 'Clawd'), store, cfg, T0 + 2000);
+  assert.equal(E.effectiveConfig(cfg, store).SOUND, false, 'the same report again: nothing changed on the clock');
 
-  r = E.run(rep(true, 'Krabbie'), store, cfg, T0 + 800000);        // changed on the clock
-  assert.equal(settingsOf(r).SOUND, true); assert.equal(settingsOf(r).PET_NAME, 'Krabbie');
-  assert.equal(r.devicePatch, null, 'taken, nothing to send back');
-
-  r = E.run(setMsg({ SOUND: false }), store, cfg, T0 + 900000);     // changed in Home Assistant
-  assert.deepEqual(r.devicePatch, { sound: false }, 'sent to the clock at once');
-  r = E.run(rep(true, 'Krabbie'), store, cfg, T0 + 901000);        // the clock has not applied it yet
-  assert.equal(E.effectiveConfig(cfg, store).SOUND, false, 'a clock that is behind is not taken as a change');
-  assert.equal(r.config, null, 'so nothing to republish');
+  r = E.run(rep(false, 'Krabbie'), store, cfg, T0 + 3000);   // changed in the clock's web UI
+  const now = JSON.parse(r.config.message);
+  assert.equal(now.SOUND, false); assert.equal(now.PET_NAME, 'Krabbie', 'a change made on the clock is taken');
+  r = E.run(setMsg({ SOUND: true, PET_NAME: 'Mr "P", Jr' }), store, cfg, T0 + 4000);
+  assert.deepEqual([line(r)[25], line(r)[26]], ['1', 'Mr P Jr'], 'the line follows n8n; no commas or quotes in the name field');
+  r = E.run(rep(false, 'Krabbie'), store, cfg, T0 + 5000);   // the app restarts, its own values unchanged
+  assert.equal(E.effectiveConfig(cfg, store).SOUND, true, 'an unchanged clock setting does not undo a change from Home Assistant');
 
   const push = {};
   E.run({ event: 'tick' }, push, {}, T0);
@@ -690,29 +687,45 @@ test('n8n wrapper: without a TZ setting the pet uses n8n\'s time zone ($now.zone
 });
 
 // ---- difficulty presets -----------------------------------------------------------------
-test('difficulty: presets fill in the values, Normal is the default game, a set value wins', () => {
+const LEVELS = ['I Can Win', 'Easy', 'Medium', 'Hard', 'Nightmare'];
+
+test('difficulty: five Quake III levels fill in the values, Medium is the default game, a set value wins', () => {
+  assert.deepEqual(Object.keys(E.PRESETS), LEVELS);
   const n = E.makeConfig({});
-  assert.equal(n.DIFFICULTY, 'normal');
-  for (const [k, v] of Object.entries(E.PRESETS.normal)) assert.equal(n[k], v, k);
-  assert.deepEqual([n.HUNGER_EMPTY_HOURS, n.CHILD_AT_HOURS, n.ADULT_AT_HOURS, n.SICK_CHANCE_PCT, n.CARE_HAPPY, n.CARE_GRUMPY], [12, 12, 72, 2, 200, -100], 'normal is today\'s game');
+  assert.equal(n.DIFFICULTY, 'Medium');
+  for (const [k, v] of Object.entries(E.PRESETS.Medium)) assert.equal(n[k], v, k);
+  assert.deepEqual([n.HUNGER_EMPTY_HOURS, n.CHILD_AT_HOURS, n.ADULT_AT_HOURS, n.SICK_CHANCE_PCT, n.CARE_HAPPY], [12, 12, 72, 2, 200], 'medium is the game as it was');
+  assert.equal(n.CARE_GRUMPY, 60, 'except grumpy: the original -100 was out of reach for a pet that survives (see balance.test.js)');
   const h = E.makeConfig({ DIFFICULTY: 'Hard', HUNGER_EMPTY_HOURS: '', CHILD_AT_HOURS: '' });
-  assert.equal(h.DIFFICULTY, 'hard');
+  assert.equal(h.DIFFICULTY, 'Hard');
   assert.equal(h.HUNGER_EMPTY_HOURS, 8, 'an empty Settings value follows the difficulty');
-  assert.equal(E.makeConfig({ DIFFICULTY: 'easy', HUNGER_EMPTY_HOURS: 10 }).HUNGER_EMPTY_HOURS, 10, 'a filled-in value wins');
-  const bad = E.makeConfig({ DIFFICULTY: 'nightmare' });
-  assert.equal(bad.DIFFICULTY, 'normal'); assert.ok(bad.warnings.includes('DIFFICULTY'));
+  assert.equal(E.makeConfig({ DIFFICULTY: 'Easy', HUNGER_EMPTY_HOURS: 10 }).HUNGER_EMPTY_HOURS, 10, 'a filled-in value wins');
+  const bad = E.makeConfig({ DIFFICULTY: 'insane' });
+  assert.equal(bad.DIFFICULTY, 'Medium'); assert.ok(bad.warnings.includes('DIFFICULTY'));
   assert.ok(E.makeConfig({ ADULT_AT_HOURS: 200 }).warnings.includes('GROWTH_AGES'), 'an adult older than an elder is refused');
   assert.ok(E.makeConfig({ CARE_HAPPY: -200 }).warnings.includes('CARE_LEVELS'));
   assert.ok(E.makeConfig({ CARE_LEGEND: 100 }).warnings.includes('CARE_LEVELS'), 'a legend needs at least a happy adult\'s care');
-  for (const d of ['easy', 'normal', 'hard']) assert.ok(E.PRESETS[d].CARE_LEGEND > E.PRESETS[d].CARE_HAPPY, d);
-  for (const d of ['easy', 'normal', 'hard']) assert.deepEqual(E.makeConfig({ DIFFICULTY: d }).warnings, [], `${d} is valid on its own`);
+  for (const d of LEVELS) {
+    assert.ok(E.PRESETS[d].CARE_LEGEND > E.PRESETS[d].CARE_HAPPY, d);
+    assert.deepEqual(E.makeConfig({ DIFFICULTY: d }).warnings, [], `${d} is valid on its own`);
+  }
 });
 
-test('difficulty: easy is easier and hard is harder in every value', () => {
-  const [e, n, h] = ['easy', 'normal', 'hard'].map((d) => E.PRESETS[d]);
-  for (const k of ['HUNGER_EMPTY_HOURS', 'ELDER_LIFE_HOURS']) assert.ok(e[k] > n[k] && n[k] > h[k], k);
-  for (const k of ['EGG_HATCH_MIN', 'CHILD_AT_HOURS', 'ADULT_AT_HOURS', 'LEGEND_AFTER_HOURS', 'SICK_CHANCE_PCT', 'CARE_HAPPY', 'CARE_GRUMPY', 'CARE_LEGEND']) {
-    assert.ok(e[k] < n[k] && n[k] < h[k], k);
+test('difficulty: names are forgiving, and the old three-level names still work', () => {
+  for (const [typed, name] of [['i can win', 'I Can Win'], ['ICANWIN', 'I Can Win'], ['easy', 'Easy'], ['normal', 'Medium'], ['MEDIUM', 'Medium'], ['hard', 'Hard'], ['nightmare', 'Nightmare']]) {
+    assert.equal(E.presetName(typed), name, typed);
+    assert.equal(E.makeConfig({ DIFFICULTY: typed }).DIFFICULTY, name, typed);
+  }
+  assert.equal(E.presetName('insane'), null);
+});
+
+test('difficulty: every level is harder than the one before, in every value', () => {
+  const p = LEVELS.map((d) => E.PRESETS[d]);
+  for (let i = 1; i < p.length; i++) {
+    for (const k of ['HUNGER_EMPTY_HOURS', 'ELDER_LIFE_HOURS']) assert.ok(p[i][k] < p[i - 1][k], `${LEVELS[i]} ${k}`);
+    for (const k of ['EGG_HATCH_MIN', 'CHILD_AT_HOURS', 'TEEN_AT_HOURS', 'ADULT_AT_HOURS', 'ELDER_AT_HOURS', 'LEGEND_AFTER_HOURS', 'SICK_CHANCE_PCT', 'CARE_HAPPY', 'CARE_GRUMPY', 'CARE_LEGEND']) {
+      assert.ok(p[i][k] > p[i - 1][k], `${LEVELS[i]} ${k}`);
+    }
   }
 });
 
@@ -720,29 +733,32 @@ test('difficulty: choosing one live applies it, clearing earlier changes to its 
   const store = {};
   E.run({ event: 'tick' }, store, {}, T0);
   E.run(setMsg({ HUNGER_EMPTY_HOURS: 20, SOUND: true }), store, {}, T0 + 1000);
-  let r = E.run(setMsg({ DIFFICULTY: 'hard' }), store, {}, T0 + 2000);
+  let r = E.run(setMsg({ DIFFICULTY: 'nightmare' }), store, {}, T0 + 2000);
   let now = JSON.parse(r.config.message);
-  assert.equal(now.DIFFICULTY, 'hard'); assert.equal(now.HUNGER_EMPTY_HOURS, 8, 'the preset really applies');
+  assert.equal(now.DIFFICULTY, 'Nightmare'); assert.equal(now.HUNGER_EMPTY_HOURS, 6, 'the preset really applies');
   assert.equal(now.SOUND, true, 'other settings stay');
   r = E.run(setMsg({ EGG_HATCH_MIN: 5 }), store, {}, T0 + 3000);
   now = JSON.parse(r.config.message);
-  assert.equal(now.DIFFICULTY, 'hard'); assert.equal(now.EGG_HATCH_MIN, 5); assert.equal(now.CHILD_AT_HOURS, 16, 'one value changed, the rest still hard');
+  assert.equal(now.DIFFICULTY, 'Nightmare'); assert.equal(now.EGG_HATCH_MIN, 5); assert.equal(now.CHILD_AT_HOURS, 20, 'one value changed, the rest still nightmare');
   assert.deepEqual(E.run(setMsg({ DIFFICULTY: 'insane' }), store, {}, T0 + 4000).settings.rejected, ['DIFFICULTY']);
   assert.deepEqual(E.run(setMsg({ CARE_HAPPY: -500 }), store, {}, T0 + 5000).settings.rejected, ['CARE_HAPPY'], 'happy must stay above grumpy');
 });
 
-test('difficulty: overnight, a pet in bed at 60% hunger - easy and normal wake with food, hard wakes hungry but alive', () => {
+test('difficulty: a pet in bed at 60% hunger - food left up to Medium, hungry on Hard, starving but alive on Nightmare', () => {
   const left = {};
-  for (const d of ['easy', 'normal', 'hard']) {
+  for (const d of LEVELS) {
     const cfg = E.makeConfig({ TZ: 'Europe/Berlin', DIFFICULTY: d });
     const bed = Date.parse('2026-09-28T22:00:00+02:00');
     const s = alivePet(bed);
     s.h = 6000;
     noRandom(null, () => { for (let t = bed + 60000; t < bed + 10 * H; t += 60000) E.advanceTime(s, cfg, t); });
-    left[d] = s.h;
+    left[d] = { h: s.h, hp: s.hp };
     assert.equal(s.st, 1, `${d}: alive`);
   }
-  assert.ok(left.easy > left.normal && left.normal > 1500 && left.hard < 1500 && left.hard > 0, JSON.stringify(left));
+  const f = (d) => left[d].h;
+  assert.ok(f('I Can Win') > f('Easy') && f('Easy') > f('Medium') && f('Medium') > 1500, JSON.stringify(left));
+  assert.ok(f('Hard') < 1500 && f('Hard') > 0 && left.Hard.hp === 10000, 'hard: hungry, no damage');
+  assert.ok(f('Nightmare') === 0 && left.Nightmare.hp < 10000, 'nightmare: an unfed night costs health');
 });
 
 // ---- elder, legend, old age -----------------------------------------------------------------
@@ -777,7 +793,7 @@ test('elder: a grumpy (neglected) adult never becomes an elder and passes away a
   g.age += 1;
   E.checkEvolution(g, cfg, T0);
   assert.deepEqual([g.st, g.ev, g.old], [2, 4, 1], 'passes away of old age as an adult');
-  const h = E.makeConfig({ DIFFICULTY: 'hard' });
+  const h = E.makeConfig({ DIFFICULTY: 'Hard' });
   assert.equal(E.lifeEnd(agedPet({ va: 2 }), h), (192 + 36) * 3600, 'follows the difficulty');
 });
 

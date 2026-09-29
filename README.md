@@ -138,7 +138,7 @@ page:
 | Easy | 18 h | 2 days | rarely | long | now and then |
 | **Medium** | 12 h | 3 days | sometimes | medium | every few hours |
 | Hard | 8 h | 4 days | often | short | every 2 hours |
-| Nightmare | 6 h | 5 days | very often | very short | every 1-2 hours, and before bed |
+| Nightmare | 4 h | 5 days | very often | very short | every hour, plus night feeds (wake it, feed it, back to bed) |
 
 On every level a caring player can raise a legend; the numbers are checked by simulating whole
 lives (see [docs/REFERENCE.md](docs/REFERENCE.md#difficulty)).

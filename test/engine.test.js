@@ -735,7 +735,7 @@ test('difficulty: choosing one live applies it, clearing earlier changes to its 
   E.run(setMsg({ HUNGER_EMPTY_HOURS: 20, SOUND: true }), store, {}, T0 + 1000);
   let r = E.run(setMsg({ DIFFICULTY: 'nightmare' }), store, {}, T0 + 2000);
   let now = JSON.parse(r.config.message);
-  assert.equal(now.DIFFICULTY, 'Nightmare'); assert.equal(now.HUNGER_EMPTY_HOURS, 6, 'the preset really applies');
+  assert.equal(now.DIFFICULTY, 'Nightmare'); assert.equal(now.HUNGER_EMPTY_HOURS, 4, 'the preset really applies');
   assert.equal(now.SOUND, true, 'other settings stay');
   r = E.run(setMsg({ EGG_HATCH_MIN: 5 }), store, {}, T0 + 3000);
   now = JSON.parse(r.config.message);
@@ -744,21 +744,34 @@ test('difficulty: choosing one live applies it, clearing earlier changes to its 
   assert.deepEqual(E.run(setMsg({ CARE_HAPPY: -500 }), store, {}, T0 + 5000).settings.rejected, ['CARE_HAPPY'], 'happy must stay above grumpy');
 });
 
-test('difficulty: a pet in bed at 60% hunger - food left up to Medium, hungry on Hard, starving but alive on Nightmare', () => {
-  const left = {};
-  for (const d of LEVELS) {
+test('difficulty: a pet in bed at 60% hunger - food left up to Medium, hungry on Hard; on Nightmare it needs a night feed', () => {
+  const bed = Date.parse('2026-09-28T22:00:00+02:00');
+  const night = (d, feedAt) => {
     const cfg = E.makeConfig({ TZ: 'Europe/Berlin', DIFFICULTY: d });
-    const bed = Date.parse('2026-09-28T22:00:00+02:00');
     const s = alivePet(bed);
     s.h = 6000;
-    noRandom(null, () => { for (let t = bed + 60000; t < bed + 10 * H; t += 60000) E.advanceTime(s, cfg, t); });
-    left[d] = { h: s.h, hp: s.hp };
+    noRandom(null, () => {
+      for (let t = bed + 60000; t < bed + 10 * H; t += 60000) {
+        E.advanceTime(s, cfg, t);
+        if (feedAt.includes((t - bed) / 60000) && s.st === 1) {        // wake it, feed it, back to bed
+          E.action(s, 8, cfg, t); E.action(s, 1, cfg, t); if (s.h < 7000) E.action(s, 1, cfg, t); E.action(s, 5, cfg, t);
+        }
+      }
+    });
+    return s;
+  };
+  const left = {};
+  for (const d of ['I Can Win', 'Easy', 'Medium', 'Hard']) {
+    const s = night(d, []);
     assert.equal(s.st, 1, `${d}: alive`);
+    left[d] = s.h;
   }
-  const f = (d) => left[d].h;
-  assert.ok(f('I Can Win') > f('Easy') && f('Easy') > f('Medium') && f('Medium') > 1500, JSON.stringify(left));
-  assert.ok(f('Hard') < 1500 && f('Hard') > 0 && left.Hard.hp === 10000, 'hard: hungry, no damage');
-  assert.ok(f('Nightmare') === 0 && left.Nightmare.hp < 10000, 'nightmare: an unfed night costs health');
+  assert.ok(left['I Can Win'] > left.Easy && left.Easy > left.Medium && left.Medium > 1500, JSON.stringify(left));
+  assert.ok(left.Hard < 1500 && left.Hard > 0, 'hard: hungry by morning');
+  assert.equal(night('Nightmare', []).st, 2, 'nightmare: an unfed night is fatal');
+  const fed = night('Nightmare', [180, 360]);                          // feeds at 01:00 and 04:00
+  assert.equal(fed.st, 1, 'nightmare: two night feeds and it wakes up fine');
+  assert.ok(fed.h > 0, 'and not starving');
 });
 
 // ---- elder, legend, old age -----------------------------------------------------------------

@@ -74,3 +74,16 @@ for (const [label, view, core] of [
     assert.match(out, /ALL OK/, out);
   });
 }
+
+test('the device module uses the same difficulty presets as n8n', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'awtrix', 'clawdcore.ax'), 'utf8');
+  const map = src.slice(src.indexOf('var P = {'), src.indexOf('P["normal"]'));
+  const ids = { icanwin: 'I Can Win', easy: 'Easy', medium: 'Medium', hard: 'Hard', nightmare: 'Nightmare' };
+  const keys = ['HUNGER_EMPTY_HOURS', 'EGG_HATCH_MIN', 'CHILD_AT_HOURS', 'TEEN_AT_HOURS', 'ADULT_AT_HOURS', 'ELDER_AT_HOURS',
+    'ELDER_LIFE_HOURS', 'LEGEND_AFTER_HOURS', 'SICK_CHANCE_PCT', 'CARE_HAPPY', 'CARE_GRUMPY', 'CARE_LEGEND'];
+  for (const [id, name] of Object.entries(ids)) {
+    const m = new RegExp('"' + id + '": \\[([^\\]]+)\\]').exec(map);
+    assert.ok(m, id);
+    assert.deepEqual(m[1].split(',').map(Number), keys.map((k) => E.PRESETS[name][k]), id);
+  }
+});

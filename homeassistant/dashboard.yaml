@@ -137,8 +137,8 @@ views:
           - type: markdown
             content: >-
               **Difficulty** sets everything under *Advanced Settings*: from *I Can Win* (hungry
-              after 24 h, never ill, long old age) through *Medium* (12 h) to *Nightmare* (6 h, ill
-              often, a short old age). Changing one advanced value keeps the rest of the
+              after 24 h, never ill, long old age) through *Medium* (12 h) to *Nightmare* (4 h, like a
+              newborn: it needs night feeds). Changing one advanced value keeps the rest of the
               difficulty; **Reset settings** goes back to the plain difficulty.
       - type: grid
         cards:

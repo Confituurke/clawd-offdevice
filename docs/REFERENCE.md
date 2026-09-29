@@ -66,36 +66,46 @@ Five levels, named after Quake III Arena's skill levels:
 
 | | I Can Win | Easy | **Medium** | Hard | Nightmare |
 |---|---|---|---|---|---|
-| Hungry after (`HUNGER_EMPTY_HOURS`) | 24 h | 18 h | 12 h | 8 h | 6 h |
+| Hungry after (`HUNGER_EMPTY_HOURS`) | 24 h | 18 h | 12 h | 8 h | 4 h |
 | Egg hatches after | 10 min | 15 min | 30 min | 45 min | 60 min |
 | Child / teen / adult at | 6 / 18 / 36 h | 8 / 24 / 48 h | 12 / 36 / 72 h | 16 / 48 / 96 h | 20 / 60 / 120 h |
 | Elder at | 120 h | 144 h | 168 h | 192 h | 216 h |
 | Elder lifespan (x1.5 for a happy elder) | 192 h | 144 h | 96 h | 72 h | 56 h |
 | Legend after (well-raised hours as a happy elder) | 12 h | 24 h | 48 h | 60 h | 66 h |
 | Sickness chance while neglected | 0% | 1% | 2% | 3% | 5% |
-| Care for a happy / grumpy adult | 60 / 30 | 100 / 40 | 200 / 60 | 330 / 240 | 720 / 660 |
-| Care a happy elder must keep for legend | 180 | 300 | 400 | 550 | 1000 |
+| Care for a happy / grumpy adult | 60 / 30 | 100 / 40 | 200 / 60 | 330 / 240 | 960 / 850 |
+| Care a happy elder must keep for legend | 180 | 300 | 400 | 550 | 1400 |
 
 - **I Can Win:** never ill, slow hunger, even a player who checks in a few times a day raises it.
 - **Easy:** forgiving; a casual player keeps it well.
 - **Medium:** the original game's rules at a friendlier speed - the default.
 - **Hard:** a pet that goes to bed at 60% hunger wakes up hungry; casual care gives a grumpy adult.
-- **Nightmare:** an unfed night costs health, illness comes often, and a legend has to be earned in
-  66 of a happy elder's 84 hours.
+- **Nightmare:** the original Clawd's pace (hungry after ~4 h). Like a newborn: it needs a meal
+  about every 1½ hours while awake and a **night feed** - wake it, feed it, put it back to bed -
+  or it starves before morning. A player who checks in less than about every hour loses it; only
+  one who also feeds at night raises a happy adult, and a legend has to be earned in 66 of a happy
+  elder's 84 hours.
 
 **How the numbers were chosen.** Care builds up faster on faster levels (more meals, more
 cleaning), so each level's care thresholds follow its own pace. They come from whole lives played
 with the real engine by simulated players who only use the normal actions
 ([`test/balance.test.js`](../test/balance.test.js)). On every level:
 
-- a **caring** player (checks in every 2 h, feeds below 70%, cleans, gives medicine, plays, lets a
-  tired pet nap, checks once more before bed) raises a happy adult, then a legend, which lives to a
-  peaceful old age;
+- a **caring** player (checks in every 2 h - hourly on Nightmare - feeds below 70%, cleans, gives
+  medicine, plays, lets a tired pet nap, checks once more before bed, and on Nightmare gives a
+  night feed at 01:00 and 04:00) raises a happy adult, then a legend, which lives to a peaceful
+  old age;
 - a **normal** and a **grumpy** adult are both reachable by players who still keep the pet alive;
 - a legend's hours always fit in a happy elder's life, with less room on each harder level.
 
 Rougher players: at I Can Win a player who checks in every 6 h still gets an old pet (grumpy); from
-Medium up, a pet that isn't played with gets unhappy, falls ill and dies young.
+Medium up, a pet that isn't played with gets unhappy, falls ill and dies young. On Nightmare,
+checking in only every 1½ hours loses the pet within two days, and without night feeds even a
+player in every half hour stays below a happy adult.
+
+**Feeding at night:** a sleeping Clawd refuses food, so `wake` it, `feed` it and `sleep` it again.
+Waking it early (manually) lasts until the next change of the sleep schedule, so put it back to bed
+or it stays up.
 
 Values combine in this order, later wins: the difficulty → a value filled in in the Settings node →
 a value changed while running. Choosing a difficulty while running (Home Assistant or

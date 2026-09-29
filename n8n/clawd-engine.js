@@ -76,7 +76,7 @@ const PRESETS = {
   'Easy':      P(18,  15,  8, 24,  48, 144, 144, 24, 1,  100,  40,  300),
   'Medium':    P(12,  30, 12, 36,  72, 168,  96, 48, 2,  200,  60,  400),
   'Hard':      P( 8,  45, 16, 48,  96, 192,  72, 60, 3,  330, 240,  550),
-  'Nightmare': P( 6,  60, 20, 60, 120, 216,  56, 66, 5,  720, 660, 1000)
+  'Nightmare': P( 4,  60, 20, 60, 120, 216,  56, 66, 5,  960, 850, 1400)
 };
 // A difficulty as typed anywhere ("medium", "I CAN WIN", the old "normal") -> its name, or null.
 function presetName(v) {

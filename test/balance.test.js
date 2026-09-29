@@ -12,7 +12,7 @@ function life(level, pl, days) {
   const cfg = E.makeConfig({ TZ: 'Europe/Berlin', DIFFICULTY: level });
   const t0 = Date.parse('2026-10-01T08:00:00+02:00');
   const s = E.freshState(1, t0);
-  const out = { adult: null, legendAt: null, died: null, old: 0, diedAfterAdult: null };
+  const out = { adult: null, legendAt: null, died: null, old: 0 };
   const random = Math.random;
   let seed = 11;
   Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
@@ -20,13 +20,28 @@ function life(level, pl, days) {
     for (let t = t0 + 60000; t < t0 + days * 86400000; t += 60000) {
       E.advanceTime(s, cfg, t);
       if (s.st === 2) { out.died = s.age / 3600; out.old = s.old; break; }
-      const d = new Date(t), bedtime = pl.bedtime && d.getHours() === 21 && d.getMinutes() === 50;
+      if (s.st !== 1) continue;
+      const d = new Date(t), h = d.getHours(), m = d.getMinutes();
       const due = (t - t0) % (pl.every * 60000) === 0;
-      if (s.st === 1 && s.sl === 1 && s.slo === 2 && due && s.en > 9000) E.action(s, 8, cfg, t);   // wake from a nap
-      if (s.st === 1 && s.sl !== 1 && (due || bedtime)) {
+      if (h >= cfg.SLEEP_FROM || h < cfg.SLEEP_TO) {
+        // Night: a night feed wakes it, feeds it (twice if needed) and puts it back to bed.
+        if (pl.nightFeed && pl.nightFeed.includes(h) && m === 0 && s.h < 5000) {
+          E.action(s, 8, cfg, t);
+          if (s.sk === 1) E.action(s, 4, cfg, t);
+          E.action(s, 1, cfg, t);
+          if (s.h < 7000) E.action(s, 1, cfg, t);
+          if (s.pp > 0) E.action(s, 3, cfg, t);
+          E.action(s, 5, cfg, t);
+        }
+        continue;
+      }
+      const bedtime = pl.bedtime && h === cfg.SLEEP_FROM - 1 && m === 50;
+      if (s.sl === 1 && s.slo === 2 && due && s.en > 9000) E.action(s, 8, cfg, t);   // wake from a nap
+      if (s.sl !== 1 && (due || bedtime)) {
         if (s.pp > 0 || s.cl < pl.cleanBelow) E.action(s, 3, cfg, t);
         if (s.sk === 1) E.action(s, 4, cfg, t);
-        if (s.h < pl.feedBelow) E.action(s, 1, cfg, t);
+        if (s.h < pl.feedBelow || (bedtime && s.h < 9000)) E.action(s, 1, cfg, t);
+        if (s.h < 3000) E.action(s, 1, cfg, t);
         if (s.ha < pl.play && s.en >= 1500) E.action(s, 2, cfg, t, { hits: 2 });
         if (pl.nap && !bedtime && s.en < 2500) E.action(s, 5, cfg, t);
       }
@@ -39,12 +54,15 @@ function life(level, pl, days) {
   return out;
 }
 
-const CARING = { every: 120, feedBelow: 7000, cleanBelow: 6000, play: 8000, bedtime: true, nap: true };
+// A caring player: checks in every 2 h (hourly on Nightmare), and at night gives a feed at
+// 01:00 and 04:00 when food is below half - which only Nightmare's pace really needs.
+const CARING = { every: 120, feedBelow: 7000, cleanBelow: 6000, play: 8000, bedtime: true, nap: true, nightFeed: [1, 4] };
+const caring = (lv) => lv === 'Nightmare' ? Object.assign({}, CARING, { every: 60 }) : CARING;
 const LEVELS = Object.keys(E.PRESETS);
 
 test('balance: on every level a caring player raises a happy adult, then a legend, which dies of old age', () => {
   for (const lv of LEVELS) {
-    const r = life(lv, CARING, 30);
+    const r = life(lv, caring(lv), 30);
     assert.equal(r.adult, 'happy', lv);
     assert.ok(r.legendAt !== null, `${lv}: becomes a legend`);
     assert.equal(r.old, 1, `${lv}: passes away of old age`);
@@ -58,9 +76,10 @@ test('balance: on every level a caring player raises a happy adult, then a legen
 const REACHABLE = {
   'I Can Win': { normal: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 4000 }, grumpy: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 0 } },
   'Easy':      { normal: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 4000 }, grumpy: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 0 } },
-  'Medium':    { normal: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 4000 }, grumpy: { every: 60, feedBelow: 5500, cleanBelow: 1000, play: 0 } },
-  'Hard':      { normal: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 7000 }, grumpy: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 4000 } },
-  'Nightmare': { normal: { every: 60, feedBelow: 5500, cleanBelow: 1000, play: 4000 }, grumpy: { every: 90, feedBelow: 5500, cleanBelow: 1000, play: 4000 } }
+  'Medium':    { normal: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 4000 }, grumpy: { every: 240, feedBelow: 2500, cleanBelow: 1000, play: 4000, nightFeed: [1, 4] } },
+  'Hard':      { normal: { every: 60, feedBelow: 2500, cleanBelow: 1000, play: 4000 }, grumpy: { every: 120, feedBelow: 2500, cleanBelow: 1000, play: 4000, nightFeed: [1, 4] } },
+  // Nightmare: without night feeds even a player in every half hour stays below a happy adult
+  'Nightmare': { normal: { every: 30, feedBelow: 7000, cleanBelow: 2000, play: 4000 }, grumpy: { every: 30, feedBelow: 5500, cleanBelow: 1000, play: 4000 } }
 };
 
 test('balance: on every level a normal and a grumpy adult are reachable without the pet dying', () => {
@@ -84,4 +103,13 @@ test('balance: a legend always fits in a happy elder\'s life, with less room on 
     assert.ok(left < room, `${lv}: tighter than the level before`);
     room = left;
   }
+});
+
+test('balance: on Nightmare only a player who also feeds at night raises a happy adult', () => {
+  const days = E.PRESETS.Nightmare.ADULT_AT_HOURS / 24 + 1;
+  const noNights = life('Nightmare', Object.assign({}, CARING, { every: 45, nightFeed: null }), days);
+  assert.ok(noNights.adult && noNights.adult !== 'happy', `in every 45 min, no night feeds: ${noNights.adult}`);
+  assert.equal(life('Nightmare', caring('Nightmare'), days).adult, 'happy', 'hourly plus night feeds: happy');
+  const slow = life('Nightmare', Object.assign({}, CARING, { every: 90 }), days);
+  assert.ok(slow.died !== null && slow.died < 72, `in only every 90 min, it doesn't survive: died at ${Math.round(slow.died)} h`);
 });

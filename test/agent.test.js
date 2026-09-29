@@ -51,8 +51,10 @@ function life(level, days, seed = 23) {
       const bedtime = d.getHours() === cfg.SLEEP_FROM - 1 && d.getMinutes() === 30;
       const wokeUp = wasAsleep && s.sl !== 1;
       wasAsleep = s.sl === 1;
-      if ((t - t0) % (EVERY[level] * 60000) !== 0 && !bedtime && !wokeUp) continue;
       const st = decode(E.stateLine(s, cfg, t), config, t / 1000);
+      // In the last 6 hours before it grows up, check in twice as often: the adult type is set then.
+      const every = st.next === 'Adult' && st.nextInHours <= 6 ? EVERY[level] / 2 : EVERY[level];
+      if ((t - t0) % (every * 60000) !== 0 && !bedtime && !wokeUp) continue;
       for (const a of decide(st, d.getHours())) {
         assert.ok(ACTIONS.includes(a), a);
         const fx = s.fx;

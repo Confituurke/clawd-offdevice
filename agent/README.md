@@ -68,4 +68,5 @@ The agent has to come back regularly - every 45 minutes to 2 hours depending on 
 
 [`test/agent.test.js`](../test/agent.test.js) plays the skill's exact routine through whole lives
 with the real game engine: five lives per difficulty, from *I Can Win* to *Nightmare*. Every pet
-reached old age - none died of neglect - and 23 of 25 became legends.
+reached old age - none died of neglect - and 24 of 25 became legends (over ten lives per level:
+every one on I Can Win to Hard, 9 in 10 on Nightmare).

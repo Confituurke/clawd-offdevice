@@ -84,6 +84,11 @@ On every level also check in **about 30 minutes before `sleepsFrom`** (the bedti
 after `sleepsUntil`** (it just woke up). No need to check at night: nothing can be done except
 medicine, and it can't fall ill asleep.
 
+**Growing up is the moment that matters most.** The adult type is fixed from the care score at
+the exact moment it becomes an adult, and only a happy adult can become a legend. When
+`status.next` is `Adult` and `nextInHours` is 6 or less, **check in twice as often** until it has
+grown up: every meal, cleanup and play in those hours counts, and an illness caught late costs 25.
+
 ## What to do at a check-in
 
 Go down the list and do **every** line that applies, in this order:
@@ -102,7 +107,8 @@ Go down the list and do **every** line that applies, in this order:
 Then report one line: stage, meters, care, what you did, and what comes next.
 
 This routine was tested by playing whole lives with the real game at every difficulty: every pet
-reached old age (none died of neglect) and nearly all became legends. Harder difficulties need
+reached old age (none died of neglect) and nearly all became legends (every one on I Can Win to
+Hard, 9 in 10 on Nightmare). Harder difficulties need
 the shorter check-in times above - don't stretch them.
 
 ## Good to know

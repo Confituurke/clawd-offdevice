@@ -45,16 +45,17 @@ works, when to check in, and what to do - and to play fair. Install it where you
 
 ## 3. Keep it checking in
 
-The agent has to come back regularly - every 45 minutes to 2 hours depending on the difficulty
-(the skill has the table), plus a check before bedtime and one when it wakes up.
+The agent has to come back regularly - every 30 minutes to 2 hours depending on the difficulty
+(the skill has the table), plus a check before bedtime and one when it wakes up, and on Nightmare
+two night feeds (01:00 and 04:00).
 
 - **Claude Code:** `/loop take care of Clawd with the clawd-caretaker skill` - it paces itself - or
   `/schedule` a recurring check-in.
-- **Hermes:** a cron job, e.g. every 45 minutes: *"Use the clawd-caretaker skill: check on Clawd and
+- **Hermes:** a cron job, e.g. every 30 minutes: *"Use the clawd-caretaker skill: check on Clawd and
   do what it needs."* (Checking in more often than needed is harmless - the skill does nothing when
   nothing is needed.)
 - **opencode / other tools:** your system's scheduler running the tool non-interactively, e.g.
-  `*/45 * * * * opencode run "Use the clawd-caretaker skill: check on Clawd."`
+  `*/30 * * * * opencode run "Use the clawd-caretaker skill: check on Clawd."`
 
 ## What it may and may not do
 
@@ -67,6 +68,6 @@ The agent has to come back regularly - every 45 minutes to 2 hours depending on 
 ## How well does it play?
 
 [`test/agent.test.js`](../test/agent.test.js) plays the skill's exact routine through whole lives
-with the real game engine: five lives per difficulty, from *I Can Win* to *Nightmare*. Every pet
-reached old age - none died of neglect - and 24 of 25 became legends (over ten lives per level:
-every one on I Can Win to Hard, 9 in 10 on Nightmare).
+with the real game engine: five lives per difficulty, from *I Can Win* to *Nightmare*. Over ten
+lives per level every pet reached old age - none died of neglect - and 49 of 50 became legends
+(all on I Can Win to Hard, 9 of 10 on Nightmare, which also needs night feeds).

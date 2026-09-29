@@ -8,15 +8,24 @@ const E = require('../n8n/clawd-engine.js');
 const { decode, ACTIONS } = require('../agent/clawd.js');
 
 // How often the skill checks in, per difficulty (minutes).
-const EVERY = { 'I Can Win': 120, 'Easy': 120, 'Medium': 120, 'Hard': 90, 'Nightmare': 45 };
+const EVERY = { 'I Can Win': 120, 'Easy': 120, 'Medium': 120, 'Hard': 90, 'Nightmare': 30 };
 
 // The skill's decision table: what to do, given the status and the local hour.
-function decide(st, hour) {
+function decide(st, hour, nightFeed) {
   const r = st.rules;
   if (st.dead) return ['newegg'];
   if (st.egg) return ['warm'];
   const acts = [];
   if (st.sick) acts.push('med');
+  if (nightFeed) {                                                   // Nightmare's night check
+    if (st.asleep && st.food < 50) {
+      acts.push('wake', 'feed');
+      if (st.food < 30) acts.push('feed');
+      if (st.poops > 0) acts.push('clean');
+      acts.push('sleep');
+    }
+    return acts;
+  }
   const bedSoon = (r.sleepsFrom - hour + 24) % 24 <= 1;          // the last check-in before bed
   const nightTime = r.sleepsFrom > r.sleepsUntil ? (hour >= r.sleepsFrom || hour < r.sleepsUntil) : (hour >= r.sleepsFrom && hour < r.sleepsUntil);
   if (st.asleep) {
@@ -49,13 +58,14 @@ function life(level, days, seed = 23) {
       if (s.st === 2) { out.died = s.age / 3600; out.old = s.old; break; }
       const d = new Date(t);
       const bedtime = d.getHours() === cfg.SLEEP_FROM - 1 && d.getMinutes() === 30;
+      const nightFeed = level === 'Nightmare' && (d.getHours() === 1 || d.getHours() === 4) && d.getMinutes() === 0;
       const wokeUp = wasAsleep && s.sl !== 1;
       wasAsleep = s.sl === 1;
       const st = decode(E.stateLine(s, cfg, t), config, t / 1000);
       // In the last 6 hours before it grows up, check in twice as often: the adult type is set then.
       const every = st.next === 'Adult' && st.nextInHours <= 6 ? EVERY[level] / 2 : EVERY[level];
-      if ((t - t0) % (every * 60000) !== 0 && !bedtime && !wokeUp) continue;
-      for (const a of decide(st, d.getHours())) {
+      if ((t - t0) % (every * 60000) !== 0 && !bedtime && !wokeUp && !nightFeed) continue;
+      for (const a of decide(st, d.getHours(), nightFeed)) {
         assert.ok(ACTIONS.includes(a), a);
         const fx = s.fx;
         E.action(s, id[a], cfg, t);                                  // what `clawd do` sends: no Star Catch hits

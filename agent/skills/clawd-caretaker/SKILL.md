@@ -55,6 +55,9 @@ game time they change a little:
   happiness.
 - **Sleep:** it sleeps from `rules.sleepsFrom` to `rules.sleepsUntil` on its own. Asleep it refuses
   food, cleaning and play; medicine and `wake` still work. `sleep` during the day is a nap.
+  Food still drops while it sleeps (slower). On most difficulties a pet that goes to bed fed lasts
+  the night; on **Nightmare** it doesn't - it needs a **night feed**: `wake`, `feed`, `sleep`. A pet
+  you woke stays up until the next change of its sleep schedule, so always put it back to bed.
 
 **Growing up:** egg → baby → child → teen → adult (at `rules.adultAt` hours) → elder
 (`rules.elderAt`). At adulthood the care score decides its type, and the type decides the rest:
@@ -78,7 +81,7 @@ slips). A legend lives longest, and its egg hatches faster with a head start in 
 | Easy | 2 h | |
 | Medium | 2 h | |
 | Hard | 1.5 h | |
-| Nightmare | 45 min | |
+| Nightmare | 30 min | a night check at 01:00 and 04:00 |
 
 On every level also check in **about 30 minutes before `sleepsFrom`** (the bedtime check) and **right
 after `sleepsUntil`** (it just woke up). No need to check at night: nothing can be done except
@@ -90,6 +93,10 @@ the exact moment it becomes an adult, and only a happy adult can become a legend
 grown up: every meal, cleanup and play in those hours counts, and an illness caught late costs 25.
 
 ## What to do at a check-in
+
+**Nightmare night check (01:00 and 04:00):** if it's ill → `med`. If food is below 50% → `wake`,
+`feed` (twice if food is below 30%), `clean` if there's poop, then `sleep` again. Otherwise leave
+it asleep. That's all at night.
 
 Go down the list and do **every** line that applies, in this order:
 
@@ -106,10 +113,10 @@ Go down the list and do **every** line that applies, in this order:
 
 Then report one line: stage, meters, care, what you did, and what comes next.
 
-This routine was tested by playing whole lives with the real game at every difficulty: every pet
-reached old age (none died of neglect) and nearly all became legends (every one on I Can Win to
-Hard, 9 in 10 on Nightmare). Harder difficulties need
-the shorter check-in times above - don't stretch them.
+This routine was tested by playing whole lives with the real game - ten lives on every
+difficulty: every pet reached old age (none died of neglect) and 49 of 50 became legends (all of
+them on I Can Win to Hard, 9 of 10 on Nightmare). Harder difficulties need the shorter check-in
+times above - don't stretch them.
 
 ## Good to know
 
